@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { WalletAccountV6, num, validateAndParseAddress, walletV6 } from "starknet";
 import type { WALLET_API } from "@starknet-io/types-js";
 import { createStore } from "@starknet-io/get-starknet-discovery";
@@ -54,12 +55,12 @@ type Tab = "shield" | "send" | "anywhere";
 export default function WalletApp({
   theme,
   onToggleTheme,
-  onHome,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
-  onHome: () => void;
 }) {
+  const navigate = useNavigate();
+  const onHome = () => navigate("/");
   const [wallets, setWallets] = useState<WalletWithStarknetFeatures[]>([]);
   const [wa, setWa] = useState<WalletAccountV6 | null>(null);
   const [address, setAddress] = useState("");
@@ -455,11 +456,13 @@ export default function WalletApp({
           )}
 
           {!address ? (
-            <Button className="gap-2" onClick={() => setPickerOpen(true)}>
+            <Button size="lg" className="mt-1 w-full gap-2" onClick={() => setPickerOpen(true)}>
               <Wallet className="size-4" /> Connect a wallet
             </Button>
           ) : (
             <Button
+              size="lg"
+              className="mt-1 w-full"
               disabled={ctaDisabled}
               onClick={
                 tab === "shield" ? handleShield : tab === "send" ? handleSend : handleAnywhere

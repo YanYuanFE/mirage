@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
   Split,
@@ -49,12 +50,12 @@ const HIDDEN = [
 export default function Landing({
   theme,
   onToggleTheme,
-  onLaunch,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
-  onLaunch: () => void;
 }) {
+  const navigate = useNavigate();
+  const onLaunch = () => navigate("/app");
   return (
     <div className="relative z-10">
       {/* Nav */}
