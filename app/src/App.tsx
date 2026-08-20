@@ -19,6 +19,13 @@ import {
   type OneClickToken,
   type Quote,
 } from "./lib/oneclick";
+import {
+  buildPlan,
+  executePlan,
+  loadPlan,
+  savePlan,
+  type Plan,
+} from "./lib/engine";
 
 type Tab = "shield" | "send" | "anywhere";
 
@@ -52,6 +59,11 @@ export default function App() {
   const [destAsset, setDestAsset] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [swapPhase, setSwapPhase] = useState<string>("");
+
+  // workflow engine
+  const [chunkCount, setChunkCount] = useState(3);
+  const [plan, setPlan] = useState<Plan | null>(() => loadPlan());
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     const store = createStore({ eip1193Adapters: [] });
@@ -170,6 +182,53 @@ export default function App() {
       ],
       `Private send ${amount} STRK`,
     );
+
+  // One pool withdrawal straight to a 1Click deposit address; resolves to the
+  // tx hash once confirmed. Used per-chunk by the workflow engine.
+  async function withdrawTo(amountWei: bigint, depositAddress: string): Promise<string> {
+    if (!wa) throw new Error("no wallet");
+    const r = await wa.strk20InvokeTransaction([
+      { type: "withdraw", token: STRK, amount: num.toHex(amountWei), recipient: depositAddress },
+    ]);
+    await provider.waitForTransaction(r.transaction_hash, {
+      retries: 400,
+      retryInterval: 3000,
+    });
+    refreshBalances();
+    return r.transaction_hash;
+  }
+
+  // Engine path: build a randomized split plan, then execute chunk by chunk.
+  async function handleAnywherePlan() {
+    if (!wa || !destAsset || !recipient) return;
+    const p = buildPlan({
+      totalWei: parseStrk(amount),
+      destAsset,
+      destLabel: destToken ? `${destToken.symbol} on ${destToken.blockchain}` : destAsset,
+      recipient: recipient.trim(),
+      refundTo: address,
+      chunkCount,
+    });
+    savePlan(p);
+    setPlan(p);
+    setReceipt(null);
+    setRunning(true);
+    try {
+      await executePlan(p, withdrawTo, setPlan);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function resumePlan() {
+    if (!plan || !wa) return;
+    setRunning(true);
+    try {
+      await executePlan(plan, withdrawTo, setPlan);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   // The Mirage core move: quote 1Click, then unshield straight to the one-time
   // deposit address. The pool's public leg only ever shows a fresh address.
@@ -310,6 +369,20 @@ export default function App() {
                 onChange={(e) => setRecipient(e.target.value)}
               />
             </label>
+            <label className="field">
+              <span>Privacy split — chunks with randomized size & timing</span>
+              <div className="chunkPicker">
+                {[1, 2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    className={chunkCount === n ? "chunkBtn active" : "chunkBtn"}
+                    onClick={() => setChunkCount(n)}
+                  >
+                    {n === 1 ? "off" : n}
+                  </button>
+                ))}
+              </div>
+            </label>
           </>
         )}
 
@@ -320,11 +393,66 @@ export default function App() {
         ) : (
           <button
             className="cta"
-            disabled={!onMainnet || (tab !== "shield" && !recipient) || (tab === "anywhere" && !destAsset)}
-            onClick={tab === "shield" ? handleShield : tab === "send" ? handleSend : handleAnywhere}
+            disabled={
+              running ||
+              !onMainnet ||
+              (tab !== "shield" && !recipient) ||
+              (tab === "anywhere" && !destAsset)
+            }
+            onClick={
+              tab === "shield"
+                ? handleShield
+                : tab === "send"
+                  ? handleSend
+                  : chunkCount > 1
+                    ? handleAnywherePlan
+                    : handleAnywhere
+            }
           >
-            {tab === "shield" ? "Shield" : tab === "send" ? "Send privately" : "Send anywhere"}
+            {tab === "shield"
+              ? "Shield"
+              : tab === "send"
+                ? "Send privately"
+                : running
+                  ? "Executing plan…"
+                  : chunkCount > 1
+                    ? `Send in ${chunkCount} chunks`
+                    : "Send anywhere"}
           </button>
+        )}
+
+        {tab === "anywhere" && plan && (
+          <div className="planBox">
+            <div className="planHead">
+              <b>Plan · {fmtStrk(BigInt(plan.totalWei))} STRK → {plan.destLabel}</b>
+              {!running && (
+                <span className="planActions">
+                  {plan.chunks.some((c) => c.status !== "success") && (
+                    <button className="mini" onClick={resumePlan}>Resume</button>
+                  )}
+                  <button className="mini" onClick={() => { savePlan(null); setPlan(null); }}>
+                    Clear
+                  </button>
+                </span>
+              )}
+            </div>
+            {plan.chunks.map((c, i) => (
+              <div key={i} className={`chunkRow ${c.status}`}>
+                <span className="chunkAmt">{fmtStrk(BigInt(c.amountWei))} STRK</span>
+                <span className="chunkState">
+                  {c.status === "scheduled" && `waits ${Math.round(c.delayMs / 1000)}s`}
+                  {c.status === "quoting" && "quoting…"}
+                  {c.status === "awaiting_wallet" && "confirm in wallet…"}
+                  {c.status === "bridging" && "bridging…"}
+                  {c.status === "success" && `✓ ${c.amountOutFormatted ?? ""}`}
+                  {c.status === "failed" && `✕ ${c.error ?? "failed"}`}
+                </span>
+                {c.txHash && (
+                  <a href={explorerTx(c.txHash)} target="_blank" rel="noreferrer">tx ↗</a>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         {quote && (

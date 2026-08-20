@@ -172,3 +172,52 @@ footer a { color: var(--accent); }
   cursor: pointer;
   font-size: 14px;
 }
+
+.chunkPicker { display: flex; gap: 6px; }
+.chunkBtn {
+  flex: 1;
+  background: var(--bg);
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.chunkBtn.active { border-color: var(--accent); color: var(--text); }
+
+.planBox {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.planHead { display: flex; justify-content: space-between; align-items: center; }
+.planActions { display: flex; gap: 6px; }
+.mini {
+  background: var(--card);
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.chunkRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid var(--line);
+}
+.chunkRow.success { border-left-color: var(--ok); }
+.chunkRow.failed { border-left-color: var(--err); }
+.chunkRow.bridging, .chunkRow.quoting, .chunkRow.awaiting_wallet { border-left-color: var(--accent); }
+.chunkAmt { font-weight: 600; min-width: 90px; }
+.chunkState { flex: 1; color: var(--dim); }
+.chunkRow a { color: var(--accent); font-size: 12px; }

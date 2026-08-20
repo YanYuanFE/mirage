@@ -88,16 +88,19 @@ Privacy boundary at each hop:
 - `appFees` field gives Mirage a built-in revenue mechanism (basis points per transfer).
 - No testnet exists — all integration testing is small-amount mainnet, which also satisfies the sprint's mainnet-transaction requirement.
 
-### 5.4 Workflow engine (Node.js service)
+### 5.4 Workflow engine
 
 Executes a send as a plan, not a single transfer:
 
 - **Splitting** — break the amount into N chunks with randomized sizes.
 - **Timing jitter** — randomized delays between chunks.
-- **Fresh accounts** — derive a new execution account per chunk.
-- **Orchestration & recovery** — per-chunk state machine (quote → deposit → settle), retry, refund handling.
+- **Per-chunk isolation** — each chunk gets its own 1Click quote and one-time deposit address.
+- **Orchestration & recovery** — per-chunk state machine (quote → withdraw → settle), resumable after reload.
 
-State in SQLite. <!-- ponytail: SQLite + single service; move to Postgres/queue if this outlives the sprint -->
+Two phases:
+
+1. **Browser phase (shipped)** — `app/src/lib/engine.ts`. The plan runs client-side; each chunk's pool withdrawal goes through the user's wallet (one approval per chunk, relayer-submitted on-chain). State persists in localStorage so an interrupted plan resumes.
+2. **Headless phase (blocked on the mainnet proving URL, issue #135)** — the same plan model moves server-side with SDK proving: one user authorization, fully automatic execution, and the component that ships into the TEE (§8).
 
 ## 6. Privacy model & honest limitations
 
