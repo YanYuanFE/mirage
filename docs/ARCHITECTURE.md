@@ -26,7 +26,7 @@ Mirage's goal: **make "hard to link" the default property of moving value anywhe
 | Private in-pool swap via anonymizer adapters (`privacy_invoke`, AVNU/Ekubo) | STRK20 | Live |
 | Intent-based cross-chain execution, 35 chains / 186 assets | NEAR Intents 1Click API | Live (Starknet origin verified by dry-run quote, 2026-08-18) |
 | Private sub-accounts / stealth accounts | STRK20 | Not shipped — not a dependency |
-| TEE runtime for the workflow engine | Phala Cloud | Roadmap (see §8) |
+| TEE runtime for the workflow engine | Phala Cloud | In-sprint stretch (see §8) |
 
 Key constraint verified against the 1Click token list: **on Starknet, 1Click accepts only STRK (plus wrapped ZEC/XRP) as origin asset.** All exits therefore convert to STRK in-pool before leaving. Destination side offers 186 assets across 35 chains (BTC, ETH, SOL, USDC/USDT on all major chains, etc.).
 
@@ -68,9 +68,9 @@ Privacy boundary at each hop:
 
 ## 5. Components
 
-### 5.1 Web app (Next.js)
+### 5.1 Web app (Vite + React)
 
-- Wallet connect (starknet.js; base on the official STRK20 starter kit).
+- Wallet connect (starknet.js). The official STRK20 starter kit is Next.js; its integration logic (wallet picker, shield/unshield, `privacy_invoke` helper) is framework-agnostic starknet.js code and is ported, not depended on.
 - Shielded balance view, shield/unshield, and one primary action: **Send privately** — pick destination chain, asset, address; show quote (amount out, fee, ETA); track progress.
 - No keys, no custody: all pool operations go through the STRK20 Wallet API route, which never touches user keys.
 
@@ -113,7 +113,7 @@ Known limitations (stated openly in the demo):
 
 - **Amount/timing correlation** — if you shield 1,000 STRK and 1,000 STRK-worth arrives on Base a minute later, statistics link them. Splitting + jitter raises the cost of this attack; it does not make it impossible. Anonymity grows with pool usage.
 - **Solver visibility** — solvers see individual chunk intents. They cannot aggregate them to a user identity, but per-chunk metadata (destination address) is visible to the filling solver by design.
-- **Mirage backend visibility** — the workflow engine sees the user's full plan. This is exactly the trust gap the TEE roadmap (§8) closes; until then the engine is open source and self-hostable.
+- **Mirage backend visibility** — the workflow engine sees the user's full plan. This is exactly the trust gap the TEE deployment (§8) closes; the engine is also open source and self-hostable.
 
 ## 7. Delivery plan (→ Aug 31, 23:59 UTC)
 
@@ -121,14 +121,22 @@ Known limitations (stated openly in the demo):
 |---|---|---|
 | Aug 20–23 | Vertical slice on mainnet: shield STRK → private transfer → unshield → 1Click → USDC on Base, driven by scripts | 3+ mainnet txs recorded in `strk20.json` |
 | Aug 24–27 | Web app: connect, shield, private send UI, live status; workflow engine with split + jitter | end-to-end demo through the UI, public deploy |
-| Aug 28–30 | Polish: in-pool AVNU swap (any-ERC-20 entry), README/docs, 3-min demo video | `strk20.json` complete |
+| Aug 28–30 | In-pool AVNU swap (any-ERC-20 entry); TEE deploy of the engine on Phala Cloud (§8); README/docs, 3-min demo video | `strk20.json` complete; attestation visible in UI |
 | Aug 31 | Buffer | final repo state is the submission |
 
-Stretch (only if ahead of schedule): custom anonymizer adapter (§9.2), TEE deployment (§8).
+Stretch (only if ahead of schedule): custom anonymizer adapter (§9.2).
 
-## 8. TEE roadmap (post-sprint)
+## 8. TEE (in-sprint stretch goal)
 
-The original "Private Superapp" sketch called for a TEE workflow engine. The commonly cited framework (NEAR Shade Agents) was deprecated in April 2026, so Mirage plans a direct **Phala Cloud** deployment instead: the workflow engine ships as a Docker image with remote attestation, so users can verify the exact code that sees their execution plans. Out of scope for the sprint; the engine is written as a stateless-per-plan service so it can be containerized without redesign.
+The original "Private Superapp" sketch called for a TEE workflow engine. The commonly cited framework (NEAR Shade Agents) was deprecated in April 2026, so Mirage targets a direct **Phala Cloud** deployment instead: the workflow engine ships as a Docker image into a confidential VM with remote attestation, so users can verify the exact code that sees their execution plans.
+
+Minimal in-sprint scope (Aug 28–30, only after the core flow and UI are done):
+
+1. containerize the workflow engine (it is already a single stateless-per-plan Node service),
+2. deploy to a Phala Cloud CVM,
+3. surface the attestation quote in the web app so the demo can prove where the engine runs.
+
+Key rotation, reproducible builds, and attestation policy hardening remain post-sprint. If the stretch window is lost to core-flow work, the engine still ships open-source and self-hostable, and this section becomes the roadmap.
 
 ## 9. Open questions
 

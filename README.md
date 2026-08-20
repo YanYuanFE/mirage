@@ -23,7 +23,7 @@ Three primitives, one flow:
 
 1. **STRK20 shielded pool** — breaks the link between your main wallet and outgoing funds.
 2. **NEAR Intents (1Click API)** — intent-based cross-chain execution; every transfer uses a one-time deposit address, no fixed bridge path.
-3. **Workflow engine** — splits amounts and randomizes timing so value can't be re-linked by correlation; TEE deployment on the roadmap.
+3. **Workflow engine** — splits amounts and randomizes timing so value can't be re-linked by correlation; runs in a TEE (Phala Cloud) with remote attestation.
 
 ## Documentation
 
