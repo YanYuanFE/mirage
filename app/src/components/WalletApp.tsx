@@ -78,6 +78,7 @@ export default function WalletApp({
   const [busy, setBusy] = useState(false);
 
   const [tokens, setTokens] = useState<OneClickToken[]>([]);
+  const [destChain, setDestChain] = useState("");
   const [destAsset, setDestAsset] = useState("");
 
   const [chunkCount, setChunkCount] = useState(3);
@@ -107,6 +108,17 @@ export default function WalletApp({
   }, []);
 
   const onMainnet = chainId === SN_MAIN;
+  const chains = useMemo(
+    () => [...new Set(tokens.map((t) => t.blockchain))].sort(),
+    [tokens],
+  );
+  const chainTokens = useMemo(
+    () =>
+      tokens
+        .filter((t) => t.blockchain === destChain)
+        .sort((a, b) => a.symbol.localeCompare(b.symbol)),
+    [tokens, destChain],
+  );
   const destToken = useMemo(
     () => tokens.find((t) => t.assetId === destAsset),
     [tokens, destAsset],
@@ -407,21 +419,47 @@ export default function WalletApp({
 
           {tab === "anywhere" && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <Label>Receive</Label>
-                <Select value={destAsset} onValueChange={(v) => setDestAsset(v ?? "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select chain & asset…" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {tokens.map((t) => (
-                      <SelectItem key={t.assetId} value={t.assetId}>
-                        {t.symbol}{" "}
-                        <span className="text-muted-foreground">on {t.blockchain}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Destination chain</Label>
+                  <Select
+                    value={destChain}
+                    onValueChange={(v) => {
+                      setDestChain(v ?? "");
+                      setDestAsset("");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chain…" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {chains.map((c) => (
+                        <SelectItem key={c} value={c} className="capitalize">
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Asset</Label>
+                  <Select
+                    value={destAsset}
+                    onValueChange={(v) => setDestAsset(v ?? "")}
+                    disabled={!destChain}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={destChain ? "Asset…" : "Pick a chain"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {chainTokens.map((t) => (
+                        <SelectItem key={t.assetId} value={t.assetId}>
+                          {t.symbol}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="dest">
