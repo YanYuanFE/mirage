@@ -29,6 +29,7 @@ import {
 } from "@/lib/config";
 import { fetchTokens, requestQuote, type OneClickToken } from "@/lib/oneclick";
 import { buildPlan, executePlan, loadPlan, savePlan, type Plan } from "@/lib/engine";
+import { MarkIcon } from "@/components/MarkIcon";
 import type { Theme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -304,12 +305,10 @@ export default function WalletApp({
       <header className="flex items-center justify-between">
         <button
           onClick={onHome}
-          className="group flex items-center gap-2 text-left"
+          className="group flex items-center gap-2.5 text-left"
           aria-label="Home"
         >
-          <span className="grid size-8 place-items-center rounded-full border border-primary/30 bg-primary/10 text-primary transition group-hover:bg-primary/20">
-            <span className="text-[15px] leading-none">◗</span>
-          </span>
+          <MarkIcon size={30} id="mark-app" className="transition group-hover:scale-105" />
           <span className="font-serif text-xl font-medium tracking-tight">Mirage</span>
         </button>
         <div className="flex items-center gap-2">

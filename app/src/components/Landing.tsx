@@ -10,6 +10,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MarkIcon } from "@/components/MarkIcon";
 import type { Theme } from "@/lib/theme";
 
 const CHAINS = [
@@ -60,10 +61,8 @@ export default function Landing({
     <div className="relative z-10">
       {/* Nav */}
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-full border border-primary/30 bg-primary/10 text-primary">
-            <span className="text-[15px] leading-none">◗</span>
-          </span>
+        <div className="flex items-center gap-2.5">
+          <MarkIcon size={30} id="mark-nav" />
           <span className="font-serif text-xl font-medium tracking-tight">Mirage</span>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
@@ -275,7 +274,7 @@ export default function Landing({
       <footer className="mx-auto max-w-5xl px-6 pb-12 pt-4">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-border pt-8 text-sm text-muted-foreground sm:flex-row">
           <span className="flex items-center gap-2">
-            <span className="text-primary">◗</span> Mirage · STRK20 Private Sprint 2026
+            <MarkIcon size={18} id="mark-foot" /> Mirage · STRK20 Private Sprint 2026
           </span>
           <div className="flex gap-5">
             <a
