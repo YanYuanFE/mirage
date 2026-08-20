@@ -128,7 +128,16 @@ export default function App() {
       const r = await wa.strk20InvokeTransaction(actions);
       txHash = r.transaction_hash;
     } catch (e: any) {
-      setReceipt({ status: "error", title: "Rejected", note: e?.message ?? String(e) });
+      const msg = e?.message ?? String(e);
+      setReceipt(
+        /NOT_REGISTERED/.test(msg)
+          ? {
+              status: "error",
+              title: "Account not registered in the privacy pool",
+              note: "One-time setup: open strk20.starknet.io/app with this wallet and complete registration, then retry here.",
+            }
+          : { status: "error", title: "Rejected", note: msg },
+      );
       return undefined;
     }
     setReceipt({ status: "pending", title: `${title} — confirming…`, txHash });
