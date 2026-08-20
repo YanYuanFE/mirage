@@ -3,6 +3,17 @@ import { WalletAccountV6, num, validateAndParseAddress, walletV6 } from "starkne
 import type { WALLET_API } from "@starknet-io/types-js";
 import { createStore } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
+import { toast } from "sonner";
+import {
+  ArrowUpRight,
+  Loader2,
+  ShieldCheck,
+  Send,
+  Globe,
+  Wallet,
+  Copy,
+  Check,
+} from "lucide-react";
 import {
   STRK,
   SN_MAIN,
@@ -12,13 +23,7 @@ import {
   parseStrk,
   shortHex,
 } from "./lib/config";
-import {
-  fetchTokens,
-  requestQuote,
-  getStatus,
-  type OneClickToken,
-  type Quote,
-} from "./lib/oneclick";
+import { fetchTokens, requestQuote, type OneClickToken } from "./lib/oneclick";
 import {
   buildPlan,
   executePlan,
@@ -26,41 +31,47 @@ import {
   savePlan,
   type Plan,
 } from "./lib/engine";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Tab = "shield" | "send" | "anywhere";
 
-type Receipt = {
-  status: "pending" | "ok" | "error";
-  title: string;
-  txHash?: string;
-  note?: string;
-};
-
 export default function App() {
-  // wallet
   const [wallets, setWallets] = useState<WalletWithStarknetFeatures[]>([]);
   const [wa, setWa] = useState<WalletAccountV6 | null>(null);
   const [address, setAddress] = useState("");
   const [chainId, setChainId] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // balances
   const [publicBal, setPublicBal] = useState<bigint | null>(null);
   const [shieldedBal, setShieldedBal] = useState<bigint | null>(null);
 
-  // ui
   const [tab, setTab] = useState<Tab>("shield");
   const [amount, setAmount] = useState("10");
   const [recipient, setRecipient] = useState("");
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // cross-chain (anywhere)
   const [tokens, setTokens] = useState<OneClickToken[]>([]);
   const [destAsset, setDestAsset] = useState("");
-  const [quote, setQuote] = useState<Quote | null>(null);
-  const [swapPhase, setSwapPhase] = useState<string>("");
 
-  // workflow engine
   const [chunkCount, setChunkCount] = useState(3);
   const [plan, setPlan] = useState<Plan | null>(() => loadPlan());
   const [running, setRunning] = useState(false);
@@ -88,15 +99,24 @@ export default function App() {
   }, []);
 
   const onMainnet = chainId === SN_MAIN;
+  const destToken = useMemo(
+    () => tokens.find((t) => t.assetId === destAsset),
+    [tokens, destAsset],
+  );
 
   async function connect(w: WalletWithStarknetFeatures) {
-    const account = await WalletAccountV6.connect(provider, w);
-    const accounts = await walletV6.requestAccounts(w);
-    if (!Array.isArray(accounts)) throw new Error("Wallet not compatible");
-    setWa(account);
-    setAddress(validateAndParseAddress(accounts[0]));
-    setChainId((await walletV6.requestChainId(w)) as string);
-    setPickerOpen(false);
+    try {
+      const account = await WalletAccountV6.connect(provider, w);
+      const accounts = await walletV6.requestAccounts(w);
+      if (!Array.isArray(accounts)) throw new Error("Wallet not compatible");
+      setWa(account);
+      setAddress(validateAndParseAddress(accounts[0]));
+      setChainId((await walletV6.requestChainId(w)) as string);
+      setPickerOpen(false);
+      toast.success(`Connected ${w.name}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Connection failed");
+    }
   }
 
   async function refreshBalances() {
@@ -133,34 +153,41 @@ export default function App() {
   }, [address, wa]);
 
   async function submit(actions: WALLET_API.STRK20_ACTION[], title: string) {
-    if (!wa) return;
-    setReceipt({ status: "pending", title: "Confirm in your wallet…" });
+    if (!wa) return undefined;
+    setBusy(true);
+    const id = toast.loading("Confirm in your wallet…");
     let txHash: string;
     try {
       const r = await wa.strk20InvokeTransaction(actions);
       txHash = r.transaction_hash;
     } catch (e: any) {
       const msg = e?.message ?? String(e);
-      setReceipt(
+      toast.error(
         /NOT_REGISTERED/.test(msg)
-          ? {
-              status: "error",
-              title: "Account not registered in the privacy pool",
-              note: "One-time setup: open strk20.starknet.io/app with this wallet and complete registration, then retry here.",
-            }
-          : { status: "error", title: "Rejected", note: msg },
+          ? "Account not registered — register once at strk20.starknet.io/app, then retry."
+          : `Rejected: ${msg}`,
+        { id },
       );
+      setBusy(false);
       return undefined;
     }
-    setReceipt({ status: "pending", title: `${title} — confirming…`, txHash });
+    toast.loading(`${title} — confirming on-chain…`, { id });
     try {
       await provider.waitForTransaction(txHash, { retries: 400, retryInterval: 3000 });
-      setReceipt({ status: "ok", title: `${title} confirmed`, txHash });
+      toast.success(`${title} confirmed`, {
+        id,
+        action: {
+          label: "View",
+          onClick: () => window.open(explorerTx(txHash), "_blank"),
+        },
+      });
       refreshBalances();
       return txHash;
     } catch (e: any) {
-      setReceipt({ status: "error", title: "Confirmation failed", txHash, note: e?.message });
+      toast.error(`Confirmation failed: ${e?.message ?? e}`, { id });
       return undefined;
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -183,40 +210,67 @@ export default function App() {
       `Private send ${amount} STRK`,
     );
 
-  // One pool withdrawal straight to a 1Click deposit address; resolves to the
-  // tx hash once confirmed. Used per-chunk by the workflow engine.
   async function withdrawTo(amountWei: bigint, depositAddress: string): Promise<string> {
     if (!wa) throw new Error("no wallet");
     const r = await wa.strk20InvokeTransaction([
       { type: "withdraw", token: STRK, amount: num.toHex(amountWei), recipient: depositAddress },
     ]);
-    await provider.waitForTransaction(r.transaction_hash, {
-      retries: 400,
-      retryInterval: 3000,
-    });
+    await provider.waitForTransaction(r.transaction_hash, { retries: 400, retryInterval: 3000 });
     refreshBalances();
     return r.transaction_hash;
   }
 
-  // Engine path: build a randomized split plan, then execute chunk by chunk.
-  async function handleAnywherePlan() {
+  async function handleAnywhere() {
     if (!wa || !destAsset || !recipient) return;
-    const p = buildPlan({
-      totalWei: parseStrk(amount),
-      destAsset,
-      destLabel: destToken ? `${destToken.symbol} on ${destToken.blockchain}` : destAsset,
-      recipient: recipient.trim(),
-      refundTo: address,
-      chunkCount,
-    });
-    savePlan(p);
-    setPlan(p);
-    setReceipt(null);
-    setRunning(true);
+
+    if (chunkCount > 1) {
+      const p = buildPlan({
+        totalWei: parseStrk(amount),
+        destAsset,
+        destLabel: destToken ? `${destToken.symbol} on ${destToken.blockchain}` : destAsset,
+        recipient: recipient.trim(),
+        refundTo: address,
+        chunkCount,
+      });
+      savePlan(p);
+      setPlan(p);
+      setRunning(true);
+      toast.info(`Executing ${chunkCount}-chunk private plan…`);
+      try {
+        const done = await executePlan(p, withdrawTo, setPlan);
+        const ok = done.chunks.every((c) => c.status === "success");
+        ok
+          ? toast.success("Plan complete — all chunks delivered")
+          : toast.warning("Plan stopped — resume from the plan panel");
+      } finally {
+        setRunning(false);
+      }
+      return;
+    }
+
+    // single-shot
+    setBusy(true);
+    const id = toast.loading("Requesting route…");
     try {
-      await executePlan(p, withdrawTo, setPlan);
+      const q = await requestQuote({
+        amountWei: parseStrk(amount),
+        destinationAsset: destAsset,
+        recipient: recipient.trim(),
+        refundTo: address,
+      });
+      toast.loading(
+        `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
+        { id },
+      );
+      const txHash = await withdrawTo(parseStrk(amount), q.depositAddress);
+      toast.success(`Sent — ${q.amountOutFormatted} ${destToken?.symbol} en route`, {
+        id,
+        action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
+      });
+    } catch (e: any) {
+      toast.error(e?.message ?? String(e), { id });
     } finally {
-      setRunning(false);
+      setBusy(false);
     }
   }
 
@@ -230,284 +284,308 @@ export default function App() {
     }
   }
 
-  // The Mirage core move: quote 1Click, then unshield straight to the one-time
-  // deposit address. The pool's public leg only ever shows a fresh address.
-  async function handleAnywhere() {
-    if (!wa || !destAsset || !recipient) return;
-    setQuote(null);
-    setSwapPhase("");
-    setReceipt({ status: "pending", title: "Requesting route…" });
-    let q: Quote;
-    try {
-      q = await requestQuote({
-        amountWei: parseStrk(amount),
-        destinationAsset: destAsset,
-        recipient: recipient.trim(),
-        refundTo: address,
-      });
-    } catch (e: any) {
-      setReceipt({ status: "error", title: "Quote failed", note: e?.message });
-      return;
-    }
-    setQuote(q);
-    const txHash = await submit(
-      [
-        {
-          type: "withdraw",
-          token: STRK,
-          amount: num.toHex(parseStrk(amount)),
-          recipient: q.depositAddress,
-        },
-      ],
-      `Send ${amount} STRK cross-chain`,
-    );
-    if (!txHash) return;
-    setSwapPhase("PROCESSING");
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 5000));
-      try {
-        const s = await getStatus(q.depositAddress);
-        setSwapPhase(s.status);
-        if (s.status === "SUCCESS" || s.status === "REFUNDED" || s.status === "FAILED")
-          return;
-      } catch {
-        /* keep polling */
-      }
-    }
+  function copyAddr() {
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    toast.success("Address copied");
+    setTimeout(() => setCopied(false), 1500);
   }
 
-  const destToken = useMemo(
-    () => tokens.find((t) => t.assetId === destAsset),
-    [tokens, destAsset],
-  );
+  const ctaDisabled =
+    busy ||
+    running ||
+    !onMainnet ||
+    (tab !== "shield" && !recipient) ||
+    (tab === "anywhere" && !destAsset);
 
   return (
-    <div className="shell">
-      <header>
-        <div className="brand">
-          <span className="logo">◗</span> Mirage
-        </div>
-        {address ? (
-          <button className="pill" onClick={() => { setWa(null); setAddress(""); }}>
-            ● {shortHex(address)}
-          </button>
-        ) : (
-          <button className="pill" onClick={() => setPickerOpen(true)}>
-            Connect
-          </button>
-        )}
-      </header>
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto flex max-w-md flex-col gap-5 px-4 py-8">
+        {/* Header */}
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/15 text-primary">
+              <Globe className="size-5" />
+            </span>
+            <span className="text-lg font-semibold tracking-tight">Mirage</span>
+          </div>
+          {address ? (
+            <Button variant="secondary" size="sm" className="gap-2" onClick={copyAddr}>
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              {shortHex(address)}
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            </Button>
+          ) : (
+            <Button size="sm" className="gap-2" onClick={() => setPickerOpen(true)}>
+              <Wallet className="size-4" /> Connect
+            </Button>
+          )}
+        </header>
 
-      {address && !onMainnet && (
-        <div className="warn">Switch your wallet to Starknet Mainnet.</div>
-      )}
-
-      <div className="balances">
-        <div className="bal">
-          <span>Public</span>
-          <b>{publicBal !== null ? fmtStrk(publicBal) : "–"} STRK</b>
-        </div>
-        <div className="bal shieldedBal">
-          <span>Shielded</span>
-          <b>{shieldedBal !== null ? fmtStrk(shieldedBal) : "–"} STRK</b>
-        </div>
-      </div>
-
-      <nav className="tabs">
-        {(
-          [
-            ["shield", "Shield"],
-            ["send", "Private send"],
-            ["anywhere", "Send anywhere"],
-          ] as [Tab, string][]
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            className={tab === k ? "tab active" : "tab"}
-            onClick={() => { setTab(k); setReceipt(null); setQuote(null); setSwapPhase(""); }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="card">
-        <label className="field">
-          <span>Amount (STRK)</span>
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </label>
-
-        {tab === "send" && (
-          <label className="field">
-            <span>Recipient (Starknet, registered in pool)</span>
-            <input
-              placeholder="0x…"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-            />
-          </label>
+        {address && !onMainnet && (
+          <Card className="border-amber-500/40 bg-amber-500/10">
+            <CardContent className="py-3 text-sm text-amber-300">
+              Switch your wallet to Starknet Mainnet.
+            </CardContent>
+          </Card>
         )}
 
-        {tab === "anywhere" && (
-          <>
-            <label className="field">
-              <span>Receive</span>
-              <select value={destAsset} onChange={(e) => setDestAsset(e.target.value)}>
-                <option value="">Select chain & asset…</option>
-                {tokens.map((t) => (
-                  <option key={t.assetId} value={t.assetId}>
-                    {t.symbol} on {t.blockchain}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Recipient address {destToken ? `(${destToken.blockchain})` : ""}</span>
-              <input
-                placeholder="address on the destination chain"
-                value={recipient}
-                onChange={(e) => setRecipient(e.target.value)}
+        {/* Balances */}
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="flex flex-col gap-1 py-4">
+              <span className="text-xs text-muted-foreground">Public</span>
+              <span className="text-lg font-semibold">
+                {publicBal !== null ? fmtStrk(publicBal) : "–"}{" "}
+                <span className="text-sm text-muted-foreground">STRK</span>
+              </span>
+            </CardContent>
+          </Card>
+          <Card className="border-primary/50">
+            <CardContent className="flex flex-col gap-1 py-4">
+              <span className="flex items-center gap-1 text-xs text-primary">
+                <ShieldCheck className="size-3.5" /> Shielded
+              </span>
+              <span className="text-lg font-semibold">
+                {shieldedBal !== null ? fmtStrk(shieldedBal) : "–"}{" "}
+                <span className="text-sm text-muted-foreground">STRK</span>
+              </span>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="shield" className="gap-1.5">
+              <ShieldCheck className="size-4" /> Shield
+            </TabsTrigger>
+            <TabsTrigger value="send" className="gap-1.5">
+              <Send className="size-4" /> Send
+            </TabsTrigger>
+            <TabsTrigger value="anywhere" className="gap-1.5">
+              <Globe className="size-4" /> Anywhere
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Action card */}
+        <Card>
+          <CardContent className="flex flex-col gap-4 py-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="amount">Amount (STRK)</Label>
+              <Input
+                id="amount"
+                value={amount}
+                inputMode="decimal"
+                onChange={(e) => setAmount(e.target.value)}
               />
-            </label>
-            <label className="field">
-              <span>Privacy split — chunks with randomized size & timing</span>
-              <div className="chunkPicker">
-                {[1, 2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    className={chunkCount === n ? "chunkBtn active" : "chunkBtn"}
-                    onClick={() => setChunkCount(n)}
-                  >
-                    {n === 1 ? "off" : n}
-                  </button>
-                ))}
-              </div>
-            </label>
-          </>
-        )}
-
-        {!address ? (
-          <button className="cta" onClick={() => setPickerOpen(true)}>
-            Connect a wallet
-          </button>
-        ) : (
-          <button
-            className="cta"
-            disabled={
-              running ||
-              !onMainnet ||
-              (tab !== "shield" && !recipient) ||
-              (tab === "anywhere" && !destAsset)
-            }
-            onClick={
-              tab === "shield"
-                ? handleShield
-                : tab === "send"
-                  ? handleSend
-                  : chunkCount > 1
-                    ? handleAnywherePlan
-                    : handleAnywhere
-            }
-          >
-            {tab === "shield"
-              ? "Shield"
-              : tab === "send"
-                ? "Send privately"
-                : running
-                  ? "Executing plan…"
-                  : chunkCount > 1
-                    ? `Send in ${chunkCount} chunks`
-                    : "Send anywhere"}
-          </button>
-        )}
-
-        {tab === "anywhere" && plan && (
-          <div className="planBox">
-            <div className="planHead">
-              <b>Plan · {fmtStrk(BigInt(plan.totalWei))} STRK → {plan.destLabel}</b>
-              {!running && (
-                <span className="planActions">
-                  {plan.chunks.some((c) => c.status !== "success") && (
-                    <button className="mini" onClick={resumePlan}>Resume</button>
-                  )}
-                  <button className="mini" onClick={() => { savePlan(null); setPlan(null); }}>
-                    Clear
-                  </button>
-                </span>
-              )}
             </div>
-            {plan.chunks.map((c, i) => (
-              <div key={i} className={`chunkRow ${c.status}`}>
-                <span className="chunkAmt">{fmtStrk(BigInt(c.amountWei))} STRK</span>
-                <span className="chunkState">
-                  {c.status === "scheduled" && `waits ${Math.round(c.delayMs / 1000)}s`}
-                  {c.status === "quoting" && "quoting…"}
-                  {c.status === "awaiting_wallet" && "confirm in wallet…"}
-                  {c.status === "bridging" && "bridging…"}
-                  {c.status === "success" && `✓ ${c.amountOutFormatted ?? ""}`}
-                  {c.status === "failed" && `✕ ${c.error ?? "failed"}`}
+
+            {tab === "send" && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="recipient">Recipient (Starknet, registered in pool)</Label>
+                <Input
+                  id="recipient"
+                  placeholder="0x…"
+                  value={recipient}
+                  onChange={(e) => setRecipient(e.target.value)}
+                />
+              </div>
+            )}
+
+            {tab === "anywhere" && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Receive</Label>
+                  <Select value={destAsset} onValueChange={(v) => setDestAsset(v ?? "")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select chain & asset…" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {tokens.map((t) => (
+                        <SelectItem key={t.assetId} value={t.assetId}>
+                          {t.symbol}{" "}
+                          <span className="text-muted-foreground">on {t.blockchain}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="dest">
+                    Recipient address {destToken ? `(${destToken.blockchain})` : ""}
+                  </Label>
+                  <Input
+                    id="dest"
+                    placeholder="address on the destination chain"
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Privacy split — randomized size & timing</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[1, 2, 3, 4].map((n) => (
+                      <Button
+                        key={n}
+                        type="button"
+                        variant={chunkCount === n ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setChunkCount(n)}
+                      >
+                        {n === 1 ? "off" : n}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!address ? (
+              <Button className="gap-2" onClick={() => setPickerOpen(true)}>
+                <Wallet className="size-4" /> Connect a wallet
+              </Button>
+            ) : (
+              <Button disabled={ctaDisabled} onClick={tab === "shield" ? handleShield : tab === "send" ? handleSend : handleAnywhere}>
+                {(busy || running) && <Loader2 className="size-4 animate-spin" />}
+                {tab === "shield"
+                  ? "Shield"
+                  : tab === "send"
+                    ? "Send privately"
+                    : running
+                      ? "Executing plan…"
+                      : chunkCount > 1
+                        ? `Send in ${chunkCount} chunks`
+                        : "Send anywhere"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Plan panel */}
+        {tab === "anywhere" && plan && (
+          <Card>
+            <CardContent className="flex flex-col gap-3 py-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  Plan · {fmtStrk(BigInt(plan.totalWei))} STRK → {plan.destLabel}
                 </span>
-                {c.txHash && (
-                  <a href={explorerTx(c.txHash)} target="_blank" rel="noreferrer">tx ↗</a>
+                {!running && (
+                  <div className="flex gap-1.5">
+                    {plan.chunks.some((c) => c.status !== "success") && (
+                      <Button variant="ghost" size="sm" onClick={resumePlan}>
+                        Resume
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        savePlan(null);
+                        setPlan(null);
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
+              <Separator />
+              <div className="flex flex-col gap-2">
+                {plan.chunks.map((c, i) => (
+                  <div key={i} className="flex items-center gap-3 text-sm">
+                    <span
+                      className={
+                        "size-2 rounded-full " +
+                        (c.status === "success"
+                          ? "bg-emerald-400"
+                          : c.status === "failed"
+                            ? "bg-destructive"
+                            : c.status === "scheduled"
+                              ? "bg-muted-foreground"
+                              : "bg-primary animate-pulse")
+                      }
+                    />
+                    <span className="w-24 font-medium">
+                      {fmtStrk(BigInt(c.amountWei))} STRK
+                    </span>
+                    <span className="flex-1 text-muted-foreground">
+                      {c.status === "scheduled" && `waits ${Math.round(c.delayMs / 1000)}s`}
+                      {c.status === "quoting" && "quoting…"}
+                      {c.status === "awaiting_wallet" && "confirm in wallet…"}
+                      {c.status === "bridging" && "bridging…"}
+                      {c.status === "success" && `✓ ${c.amountOutFormatted ?? ""}`}
+                      {c.status === "failed" && `✕ ${c.error ?? "failed"}`}
+                    </span>
+                    {c.txHash && (
+                      <a
+                        href={explorerTx(c.txHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary"
+                      >
+                        <ArrowUpRight className="size-4" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {quote && (
-          <div className="quoteBox">
-            <div>
-              → {quote.amountOutFormatted} {destToken?.symbol} on {destToken?.blockchain}
-              {" "}(~{quote.timeEstimate}s)
-            </div>
-            <div className="mono">via one-time deposit {shortHex(quote.depositAddress)}</div>
-            {swapPhase && <div className="phase">{swapPhase}</div>}
-          </div>
-        )}
+        <p className="text-center text-xs text-muted-foreground">
+          Shield on Starknet · exit anywhere · no on-chain link ·{" "}
+          <a
+            href="https://github.com/YanYuanFE/mirage"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary"
+          >
+            GitHub
+          </a>
+        </p>
+      </div>
 
-        {receipt && (
-          <div className={`receipt ${receipt.status}`}>
-            <b>{receipt.status === "ok" ? "✓ " : receipt.status === "error" ? "✕ " : "⋯ "}
-              {receipt.title}</b>
-            {receipt.txHash && (
-              <a href={explorerTx(receipt.txHash)} target="_blank" rel="noreferrer">
-                {shortHex(receipt.txHash)} ↗
-              </a>
-            )}
-            {receipt.note && <pre>{receipt.note}</pre>}
-          </div>
-        )}
-      </main>
-
-      <footer>
-        Shield on Starknet · exit anywhere · no on-chain link.{" "}
-        <a href="https://github.com/YanYuanFE/mirage" target="_blank" rel="noreferrer">
-          GitHub
-        </a>
-      </footer>
-
-      {pickerOpen && (
-        <div className="overlay" onClick={() => setPickerOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Connect a wallet</h3>
-            {wallets.length ? (
+      {/* Wallet picker */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Connect a wallet</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {wallets.filter((w) => !/metamask/i.test(w.name)).length ? (
               wallets
                 .filter((w) => !/metamask/i.test(w.name))
                 .map((w) => (
-                  <button key={w.name} className="walletRow" onClick={() => connect(w)}>
-                    <img src={w.icon} alt="" width={24} height={24} /> {w.name}
-                  </button>
+                  <Button
+                    key={w.name}
+                    variant="outline"
+                    className="justify-start gap-3"
+                    onClick={() => connect(w)}
+                  >
+                    <img src={w.icon} alt="" className="size-6 rounded" />
+                    {w.name}
+                  </Button>
                 ))
             ) : (
-              <p>
+              <p className="text-sm text-muted-foreground">
                 No Starknet wallet found. Install{" "}
-                <a href="https://www.ready.co/" target="_blank" rel="noreferrer">Ready</a>.
+                <a
+                  href="https://www.ready.co/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary"
+                >
+                  Ready
+                </a>
+                .
               </p>
             )}
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
