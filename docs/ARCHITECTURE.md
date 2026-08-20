@@ -100,7 +100,7 @@ Executes a send as a plan, not a single transfer:
 Two phases:
 
 1. **Browser phase (shipped)** — `app/src/lib/engine.ts`. The plan runs client-side; each chunk's pool withdrawal goes through the user's wallet (one approval per chunk, relayer-submitted on-chain). State persists in localStorage so an interrupted plan resumes.
-2. **Headless phase (blocked on the mainnet proving URL, issue #135)** — the same plan model moves server-side with SDK proving: one user authorization, fully automatic execution, and the component that ships into the TEE (§8).
+2. **Headless phase (scaffolded in `server/`, live withdrawals blocked on the mainnet proving URL, issue #135)** — the same plan model server-side: node:http API (`POST /plans`), JSON-file persistence, restart-resume, real 1Click quoting today via `DRY_RUN=1`. `server/src/strk20.ts` is the single plug-in point: fill `PROVING_SERVICE_URL` + engine account env and withdrawals go live. One user authorization, fully automatic execution — and the component that ships into the TEE (§8).
 
 ## 6. Privacy model & honest limitations
 

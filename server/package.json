@@ -1,0 +1,12 @@
+{
+  "name": "mirage-engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts"
+  },
+  "dependencies": {
+    "starknet": "10.4.0"
+  }
+}
