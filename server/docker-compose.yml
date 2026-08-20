@@ -1,0 +1,18 @@
+# Phala Cloud deploys this compose file into a TDX confidential VM.
+services:
+  engine:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - engine-data:/data
+    environment:
+      - DRY_RUN=${DRY_RUN:-1}
+      - PROVING_SERVICE_URL=${PROVING_SERVICE_URL:-}
+      - INDEXER_URL=${INDEXER_URL:-}
+      - ACCOUNT_ADDRESS=${ACCOUNT_ADDRESS:-}
+      - ACCOUNT_PRIVATE_KEY=${ACCOUNT_PRIVATE_KEY:-}
+      - VIEWING_KEY=${VIEWING_KEY:-}
+      - ONECLICK_JWT=${ONECLICK_JWT:-}
+volumes:
+  engine-data:
