@@ -24,8 +24,15 @@ export function fmtStrk(amount: bigint): string {
 }
 
 export function parseStrk(s: string): bigint {
+  return parseUnits(s, 18);
+}
+
+export function parseUnits(s: string, decimals: number): bigint {
   const [whole, frac = ""] = s.trim().split(".");
-  return BigInt(whole || "0") * 10n ** 18n + BigInt(frac.padEnd(18, "0").slice(0, 18));
+  return (
+    BigInt(whole || "0") * 10n ** BigInt(decimals) +
+    BigInt(frac.padEnd(decimals, "0").slice(0, decimals))
+  );
 }
 
 export const shortHex = (h: string) =>

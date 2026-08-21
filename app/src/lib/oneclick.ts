@@ -37,9 +37,31 @@ export type Quote = {
   deadline: string;
 };
 
+// Outbound (pool → any chain): origin is always Starknet STRK; the amount is
+// the token's smallest unit. Inbound uses requestQuoteRaw with an explicit origin.
 export async function requestQuote(opts: {
   amountWei: bigint;
   destinationAsset: string;
+  recipient: string;
+  refundTo: string;
+  dry?: boolean;
+}): Promise<Quote> {
+  return requestQuoteRaw({
+    originAsset: STARKNET_STRK_ASSET,
+    amount: opts.amountWei.toString(),
+    destinationAsset: opts.destinationAsset,
+    recipient: opts.recipient,
+    refundTo: opts.refundTo,
+    dry: opts.dry,
+  });
+}
+
+// Full-control quote — used by the inbound (return) leg where the origin is a
+// destination-chain asset and the recipient is the user's Starknet account.
+export async function requestQuoteRaw(opts: {
+  originAsset: string;
+  destinationAsset: string;
+  amount: string; // smallest unit of originAsset
   recipient: string;
   refundTo: string;
   dry?: boolean;
@@ -48,10 +70,10 @@ export async function requestQuote(opts: {
     dry: opts.dry ?? false,
     swapType: "EXACT_INPUT",
     slippageTolerance: 100,
-    originAsset: STARKNET_STRK_ASSET,
+    originAsset: opts.originAsset,
     depositType: "ORIGIN_CHAIN",
     destinationAsset: opts.destinationAsset,
-    amount: opts.amountWei.toString(),
+    amount: opts.amount,
     refundTo: opts.refundTo,
     refundType: "ORIGIN_CHAIN",
     recipient: opts.recipient,

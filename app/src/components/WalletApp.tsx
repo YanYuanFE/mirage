@@ -17,6 +17,7 @@ import {
   Sun,
   Moon,
   ArrowLeft,
+  ArrowDownToLine,
 } from "lucide-react";
 import {
   STRK,
@@ -25,9 +26,18 @@ import {
   explorerTx,
   fmtStrk,
   parseStrk,
+  parseUnits,
   shortHex,
 } from "@/lib/config";
-import { fetchTokens, requestQuote, type OneClickToken } from "@/lib/oneclick";
+import {
+  fetchTokens,
+  requestQuote,
+  requestQuoteRaw,
+  getStatus,
+  STARKNET_STRK_ASSET,
+  type OneClickToken,
+  type Quote,
+} from "@/lib/oneclick";
 import { buildPlan, executePlan, loadPlan, savePlan, type Plan } from "@/lib/engine";
 import { MarkIcon } from "@/components/MarkIcon";
 import type { Theme } from "@/lib/theme";
@@ -51,7 +61,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type Tab = "shield" | "send" | "anywhere";
+type Tab = "shield" | "send" | "anywhere" | "return";
 
 export default function WalletApp({
   theme,
@@ -84,6 +94,14 @@ export default function WalletApp({
   const [chunkCount, setChunkCount] = useState(3);
   const [plan, setPlan] = useState<Plan | null>(() => loadPlan());
   const [running, setRunning] = useState(false);
+
+  // return (inbound): a destination-chain asset swapped back to shielded STRK
+  const [srcChain, setSrcChain] = useState("");
+  const [srcAsset, setSrcAsset] = useState("");
+  const [retAmount, setRetAmount] = useState("");
+  const [srcRefund, setSrcRefund] = useState("");
+  const [retQuote, setRetQuote] = useState<Quote | null>(null);
+  const [retPhase, setRetPhase] = useState("");
 
   useEffect(() => {
     const store = createStore({ eip1193Adapters: [] });
@@ -122,6 +140,17 @@ export default function WalletApp({
   const destToken = useMemo(
     () => tokens.find((t) => t.assetId === destAsset),
     [tokens, destAsset],
+  );
+  const srcTokens = useMemo(
+    () =>
+      tokens
+        .filter((t) => t.blockchain === srcChain)
+        .sort((a, b) => a.symbol.localeCompare(b.symbol)),
+    [tokens, srcChain],
+  );
+  const srcToken = useMemo(
+    () => tokens.find((t) => t.assetId === srcAsset),
+    [tokens, srcAsset],
   );
 
   async function connect(w: WalletWithStarknetFeatures) {
@@ -297,6 +326,68 @@ export default function WalletApp({
     }
   }
 
+  // Return leg: swap a destination-chain asset back to STRK on the user's
+  // Starknet account, then shield it. The trading identity stays unlinkable;
+  // this only tops the shielded balance back up.
+  async function handleReturn() {
+    if (!srcToken || !retAmount || !srcRefund || !address) return;
+    setRetQuote(null);
+    setRetPhase("");
+    setBusy(true);
+    const id = toast.loading("Requesting return route…");
+    let q: Quote;
+    try {
+      q = await requestQuoteRaw({
+        originAsset: srcToken.assetId,
+        destinationAsset: STARKNET_STRK_ASSET,
+        amount: parseUnits(retAmount, srcToken.decimals).toString(),
+        recipient: address, // STRK lands on the connected account, then shields
+        refundTo: srcRefund.trim(),
+      });
+    } catch (e: any) {
+      toast.error(e?.message ?? String(e), { id });
+      setBusy(false);
+      return;
+    }
+    setRetQuote(q);
+    setRetPhase("PENDING_DEPOSIT");
+    toast.success(`Send ${retAmount} ${srcToken.symbol} to the address shown`, { id });
+    setBusy(false);
+    // poll until the STRK arrives on Starknet
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const s = await getStatus(
+          "0x" + q.depositAddress.replace(/^0x/, "").padStart(64, "0"),
+        );
+        setRetPhase(s.status);
+        if (s.status === "SUCCESS") {
+          toast.success(`${q.amountOutFormatted} STRK arrived — shield it to finish`);
+          return;
+        }
+        if (s.status === "REFUNDED" || s.status === "FAILED") {
+          toast.error(`Return ${s.status.toLowerCase()}`);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+    }
+  }
+
+  const handleShieldReturn = () => {
+    if (!retQuote) return;
+    submit(
+      [{ type: "deposit", token: STRK, amount: num.toHex(BigInt(retQuote.amountOut)) }],
+      `Shield ${retQuote.amountOutFormatted} STRK`,
+    ).then((tx) => {
+      if (tx) {
+        setRetQuote(null);
+        setRetPhase("");
+      }
+    });
+  };
+
   function copyAddr() {
     navigator.clipboard.writeText(address);
     setCopied(true);
@@ -377,7 +468,7 @@ export default function WalletApp({
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="shield" className="gap-1.5">
             <ShieldCheck className="size-4" /> Shield
           </TabsTrigger>
@@ -385,7 +476,10 @@ export default function WalletApp({
             <Send className="size-4" /> Send
           </TabsTrigger>
           <TabsTrigger value="anywhere" className="gap-1.5">
-            <Globe className="size-4" /> Anywhere
+            <Globe className="size-4" /> Out
+          </TabsTrigger>
+          <TabsTrigger value="return" className="gap-1.5">
+            <ArrowDownToLine className="size-4" /> Return
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -393,16 +487,18 @@ export default function WalletApp({
       {/* Action card */}
       <Card>
         <CardContent className="flex flex-col gap-4 py-5">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="amount">Amount (STRK)</Label>
-            <Input
-              id="amount"
-              value={amount}
-              inputMode="decimal"
-              className="font-mono"
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
+          {tab !== "return" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="amount">Amount (STRK)</Label>
+              <Input
+                id="amount"
+                value={amount}
+                inputMode="decimal"
+                className="font-mono"
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+          )}
 
           {tab === "send" && (
             <div className="flex flex-col gap-1.5">
@@ -492,10 +588,131 @@ export default function WalletApp({
             </>
           )}
 
+          {tab === "return" && (
+            <>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Bring funds back from any chain into your shielded balance — e.g.
+                Hyperliquid or Polymarket proceeds. You send from the source chain;
+                Mirage swaps to STRK and shields it on Starknet.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>From chain</Label>
+                  <Select
+                    value={srcChain}
+                    onValueChange={(v) => {
+                      setSrcChain(v ?? "");
+                      setSrcAsset("");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chain…" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {chains.map((c) => (
+                        <SelectItem key={c} value={c} className="capitalize">
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Asset</Label>
+                  <Select
+                    value={srcAsset}
+                    onValueChange={(v) => setSrcAsset(v ?? "")}
+                    disabled={!srcChain}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={srcChain ? "Asset…" : "Pick a chain"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {srcTokens.map((t) => (
+                        <SelectItem key={t.assetId} value={t.assetId}>
+                          {t.symbol}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="retamt">Amount {srcToken ? `(${srcToken.symbol})` : ""}</Label>
+                <Input
+                  id="retamt"
+                  inputMode="decimal"
+                  className="font-mono"
+                  value={retAmount}
+                  onChange={(e) => setRetAmount(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="refund">
+                  Your {srcToken ? srcToken.blockchain : "source"} address (for refunds)
+                </Label>
+                <Input
+                  id="refund"
+                  placeholder="address you send from"
+                  className="font-mono"
+                  value={srcRefund}
+                  onChange={(e) => setSrcRefund(e.target.value)}
+                />
+              </div>
+
+              {retQuote && (
+                <div className="flex flex-col gap-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
+                  <div className="text-muted-foreground">
+                    Send exactly{" "}
+                    <span className="font-mono text-foreground">
+                      {retAmount} {srcToken?.symbol}
+                    </span>{" "}
+                    on {srcToken?.blockchain} to:
+                  </div>
+                  <button
+                    className="break-all text-left font-mono text-xs text-primary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(retQuote.depositAddress);
+                      toast.success("Deposit address copied");
+                    }}
+                  >
+                    {retQuote.depositAddress} ⧉
+                  </button>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>→ ~{retQuote.amountOutFormatted} STRK</span>
+                    <span className="text-primary">{retPhase}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {!address ? (
             <Button size="lg" className="mt-1 w-full gap-2" onClick={() => setPickerOpen(true)}>
               <Wallet className="size-4" /> Connect a wallet
             </Button>
+          ) : tab === "return" ? (
+            retPhase === "SUCCESS" ? (
+              <Button
+                size="lg"
+                className="mt-1 w-full"
+                disabled={busy}
+                onClick={handleShieldReturn}
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                Shield {retQuote?.amountOutFormatted} STRK
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className="mt-1 w-full"
+                disabled={busy || !onMainnet || !srcAsset || !retAmount || !srcRefund || !!retQuote}
+                onClick={handleReturn}
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {retQuote ? "Waiting for your deposit…" : "Get deposit address"}
+              </Button>
+            )
           ) : (
             <Button
               size="lg"

@@ -25,6 +25,8 @@ Three primitives, one flow:
 2. **NEAR Intents (1Click API)** — intent-based cross-chain execution; every transfer uses a one-time deposit address, no fixed bridge path.
 3. **Workflow engine** — splits amounts and randomizes timing so value can't be re-linked by correlation; runs in a TEE (Phala Cloud) with remote attestation.
 
+Bidirectional: the same rail runs in reverse (**Return**), so you can fund a fresh, unlinkable identity on another chain — Hyperliquid, Polymarket — trade there, and bring the proceeds back into your shielded balance. Mirage hides the *link* to you, not the on-venue activity: your positions are visible on the venue, just not provably yours.
+
 ## Documentation
 
 - [Architecture & technical design](docs/ARCHITECTURE.md)

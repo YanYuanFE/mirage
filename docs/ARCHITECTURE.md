@@ -66,6 +66,33 @@ Privacy boundary at each hop:
 - Starknet ↔ destination chain: no fixed bridge path; one-time deposit address per transfer,
 - transfer ↔ transfer: broken by splitting and timing jitter (workflow engine, §6).
 
+### 4a. Return leg (inbound)
+
+The same rail runs in reverse, closing the round-trip needed to actually *use*
+Mirage as execution infra (fund a fresh identity on Hyperliquid / Polymarket,
+trade, bring proceeds home privately). 1Click delivers **to** Starknet — verified
+by dry-run (Base USDC → Starknet STRK, ~39 s):
+
+```
+destination-chain asset (USDC on Base/Arb/Polygon, Hyperliquid proceeds …)
+   │  1Click quote: origin = that asset, destination = Starknet STRK
+   ▼
+one-time deposit address on the source chain  ← user funds it
+   │  solvers deliver
+   ▼
+STRK on the user's Starknet account (public)
+   │  shield (deposit into the pool)
+   ▼
+shielded balance, topped back up
+```
+
+The trading identity on the destination stays unlinkable; the return only
+credits the shielded balance. The final shield is a normal pool deposit the user
+signs. In-app this is the **Return** tab: pick source chain/asset/amount + a
+refund address, get a deposit address, fund it, and shield the arrived STRK. No
+EVM wallet integration is required — the user sends from wherever the funds
+already are.
+
 ## 5. Components
 
 ### 5.1 Web app (Vite + React)
