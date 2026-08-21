@@ -10,14 +10,13 @@ import {
   Loader2,
   ShieldCheck,
   Send,
-  Globe,
   Wallet,
   Copy,
   Check,
   Sun,
   Moon,
   ArrowLeft,
-  ArrowDownToLine,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   STRK,
@@ -61,7 +60,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type Tab = "shield" | "send" | "anywhere" | "return";
+type Tab = "shield" | "send" | "swap";
+type SwapDir = "out" | "in";
 
 export default function WalletApp({
   theme,
@@ -83,6 +83,7 @@ export default function WalletApp({
   const [shieldedBal, setShieldedBal] = useState<bigint | null>(null);
 
   const [tab, setTab] = useState<Tab>("shield");
+  const [swapDir, setSwapDir] = useState<SwapDir>("out");
   const [amount, setAmount] = useState("10");
   const [recipient, setRecipient] = useState("");
   const [busy, setBusy] = useState(false);
@@ -399,8 +400,8 @@ export default function WalletApp({
     busy ||
     running ||
     !onMainnet ||
-    (tab !== "shield" && !recipient) ||
-    (tab === "anywhere" && !destAsset);
+    (tab === "send" && !recipient) ||
+    (tab === "swap" && swapDir === "out" && (!recipient || !destAsset));
 
   return (
     <div className="relative z-10 mx-auto flex max-w-md flex-col gap-5 px-4 py-8">
@@ -468,18 +469,15 @@ export default function WalletApp({
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="shield" className="gap-1.5">
             <ShieldCheck className="size-4" /> Shield
           </TabsTrigger>
           <TabsTrigger value="send" className="gap-1.5">
             <Send className="size-4" /> Send
           </TabsTrigger>
-          <TabsTrigger value="anywhere" className="gap-1.5">
-            <Globe className="size-4" /> Out
-          </TabsTrigger>
-          <TabsTrigger value="return" className="gap-1.5">
-            <ArrowDownToLine className="size-4" /> Return
+          <TabsTrigger value="swap" className="gap-1.5">
+            <ArrowLeftRight className="size-4" /> Swap
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -487,7 +485,28 @@ export default function WalletApp({
       {/* Action card */}
       <Card>
         <CardContent className="flex flex-col gap-4 py-5">
-          {tab !== "return" && (
+          {tab === "swap" && (
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-border p-1">
+              {(
+                [
+                  ["out", "Shielded → Chain"],
+                  ["in", "Chain → Shielded"],
+                ] as [SwapDir, string][]
+              ).map(([d, label]) => (
+                <Button
+                  key={d}
+                  type="button"
+                  size="sm"
+                  variant={swapDir === d ? "default" : "ghost"}
+                  onClick={() => setSwapDir(d)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {!(tab === "swap" && swapDir === "in") && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="amount">Amount (STRK)</Label>
               <Input
@@ -513,7 +532,7 @@ export default function WalletApp({
             </div>
           )}
 
-          {tab === "anywhere" && (
+          {tab === "swap" && swapDir === "out" && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
@@ -588,7 +607,7 @@ export default function WalletApp({
             </>
           )}
 
-          {tab === "return" && (
+          {tab === "swap" && swapDir === "in" && (
             <>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Bring funds back from any chain into your shielded balance — e.g.
@@ -691,7 +710,7 @@ export default function WalletApp({
             <Button size="lg" className="mt-1 w-full gap-2" onClick={() => setPickerOpen(true)}>
               <Wallet className="size-4" /> Connect a wallet
             </Button>
-          ) : tab === "return" ? (
+          ) : tab === "swap" && swapDir === "in" ? (
             retPhase === "SUCCESS" ? (
               <Button
                 size="lg"
@@ -738,7 +757,7 @@ export default function WalletApp({
       </Card>
 
       {/* Plan panel */}
-      {tab === "anywhere" && plan && (
+      {tab === "swap" && swapDir === "out" && plan && (
         <Card>
           <CardContent className="flex flex-col gap-3 py-4">
             <div className="flex items-center justify-between">

@@ -88,10 +88,11 @@ shielded balance, topped back up
 
 The trading identity on the destination stays unlinkable; the return only
 credits the shielded balance. The final shield is a normal pool deposit the user
-signs. In-app this is the **Return** tab: pick source chain/asset/amount + a
-refund address, get a deposit address, fund it, and shield the arrived STRK. No
-EVM wallet integration is required — the user sends from wherever the funds
-already are.
+signs. In-app both directions live under one **Swap** tab with a
+Shielded→Chain / Chain→Shielded toggle: the inbound side asks for source
+chain/asset/amount + a refund address, returns a deposit address to fund, and
+shields the arrived STRK. No EVM wallet integration is required — the user sends
+from wherever the funds already are.
 
 ## 5. Components
 
