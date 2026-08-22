@@ -39,6 +39,7 @@ import {
 } from "@/lib/oneclick";
 import { buildPlan, executePlan, loadPlan, savePlan, type Plan } from "@/lib/engine";
 import { MarkIcon } from "@/components/MarkIcon";
+import { ChainIcon } from "@/components/ChainIcon";
 import type { Theme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,6 +131,19 @@ export default function WalletApp({
   const chains = useMemo(
     () => [...new Set(tokens.map((t) => t.blockchain))].sort(),
     [tokens],
+  );
+  const chainItems = useMemo(
+    () =>
+      Object.fromEntries(
+        chains.map((c) => [
+          c,
+          <span key={c} className="flex items-center gap-1.5 capitalize">
+            <ChainIcon chain={c} />
+            {c}
+          </span>,
+        ]),
+      ),
+    [chains],
   );
   const chainTokens = useMemo(
     () =>
@@ -552,14 +566,15 @@ export default function WalletApp({
                       setDestChain(v ?? "");
                       setDestAsset("");
                     }}
+                    items={chainItems}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Chain…" />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
                       {chains.map((c) => (
-                        <SelectItem key={c} value={c} className="capitalize">
-                          {c}
+                        <SelectItem key={c} value={c}>
+                          {chainItems[c]}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -633,14 +648,15 @@ export default function WalletApp({
                       setSrcChain(v ?? "");
                       setSrcAsset("");
                     }}
+                    items={chainItems}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Chain…" />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
                       {chains.map((c) => (
-                        <SelectItem key={c} value={c} className="capitalize">
-                          {c}
+                        <SelectItem key={c} value={c}>
+                          {chainItems[c]}
                         </SelectItem>
                       ))}
                     </SelectContent>
