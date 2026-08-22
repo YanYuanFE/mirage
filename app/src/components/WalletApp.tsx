@@ -491,7 +491,7 @@ export default function WalletApp({
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-3 group-data-horizontal/tabs:h-11">
           <TabsTrigger value="shield" className="gap-1.5">
             <ShieldCheck className="size-4" /> Shield
           </TabsTrigger>
