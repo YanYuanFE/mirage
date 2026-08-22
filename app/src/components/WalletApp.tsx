@@ -570,7 +570,7 @@ export default function WalletApp({
                     <SelectTrigger>
                       <SelectValue placeholder="Chain…" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-72">
+                    <SelectContent className="max-h-72" alignItemWithTrigger={false}>
                       {chains.map((c) => (
                         <SelectItem key={c} value={c}>
                           {chainItems[c]}
@@ -590,7 +590,7 @@ export default function WalletApp({
                     <SelectTrigger>
                       <SelectValue placeholder={destChain ? "Asset…" : "Pick a chain"} />
                     </SelectTrigger>
-                    <SelectContent className="max-h-72">
+                    <SelectContent className="max-h-72" alignItemWithTrigger={false}>
                       {chainTokens.map((t) => (
                         <SelectItem key={t.assetId} value={t.assetId}>
                           {t.symbol}
@@ -652,7 +652,7 @@ export default function WalletApp({
                     <SelectTrigger>
                       <SelectValue placeholder="Chain…" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-72">
+                    <SelectContent className="max-h-72" alignItemWithTrigger={false}>
                       {chains.map((c) => (
                         <SelectItem key={c} value={c}>
                           {chainItems[c]}
@@ -672,7 +672,7 @@ export default function WalletApp({
                     <SelectTrigger>
                       <SelectValue placeholder={srcChain ? "Asset…" : "Pick a chain"} />
                     </SelectTrigger>
-                    <SelectContent className="max-h-72">
+                    <SelectContent className="max-h-72" alignItemWithTrigger={false}>
                       {srcTokens.map((t) => (
                         <SelectItem key={t.assetId} value={t.assetId}>
                           {t.symbol}
