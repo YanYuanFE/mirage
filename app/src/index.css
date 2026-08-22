@@ -108,6 +108,11 @@
     body {
         @apply bg-background text-foreground font-sans antialiased;
     }
+    /* Tailwind v4 preflight no longer sets pointer on buttons */
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]) {
+        cursor: pointer;
+    }
     /* Optical-sizing + weight range for the Fraunces display face */
     .font-serif {
         font-optical-sizing: auto;
