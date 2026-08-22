@@ -142,6 +142,11 @@ export default function WalletApp({
     () => tokens.find((t) => t.assetId === destAsset),
     [tokens, destAsset],
   );
+  // base-ui SelectValue renders the raw value unless Root gets an items map
+  const chainTokenItems = useMemo(
+    () => Object.fromEntries(chainTokens.map((t) => [t.assetId, t.symbol])),
+    [chainTokens],
+  );
   const srcTokens = useMemo(
     () =>
       tokens
@@ -152,6 +157,10 @@ export default function WalletApp({
   const srcToken = useMemo(
     () => tokens.find((t) => t.assetId === srcAsset),
     [tokens, srcAsset],
+  );
+  const srcTokenItems = useMemo(
+    () => Object.fromEntries(srcTokens.map((t) => [t.assetId, t.symbol])),
+    [srcTokens],
   );
 
   async function connect(w: WalletWithStarknetFeatures) {
@@ -562,6 +571,7 @@ export default function WalletApp({
                     value={destAsset}
                     onValueChange={(v) => setDestAsset(v ?? "")}
                     disabled={!destChain}
+                    items={chainTokenItems}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={destChain ? "Asset…" : "Pick a chain"} />
@@ -642,6 +652,7 @@ export default function WalletApp({
                     value={srcAsset}
                     onValueChange={(v) => setSrcAsset(v ?? "")}
                     disabled={!srcChain}
+                    items={srcTokenItems}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={srcChain ? "Asset…" : "Pick a chain"} />
