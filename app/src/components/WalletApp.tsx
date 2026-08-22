@@ -381,9 +381,8 @@ export default function WalletApp({
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
-        const s = await getStatus(
-          "0x" + q.depositAddress.replace(/^0x/, "").padStart(64, "0"),
-        );
+        // deposit address is on the source chain (EVM etc.) — query it as returned
+        const s = await getStatus(q.depositAddress);
         setRetPhase(s.status);
         if (s.status === "SUCCESS") {
           toast.success(`${q.amountOutFormatted} STRK arrived — shield it to finish`);
