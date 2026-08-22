@@ -97,11 +97,11 @@ export default function Landing({
           className="rise max-w-3xl font-serif text-5xl font-medium leading-[1.02] tracking-tight sm:text-7xl"
           style={{ animationDelay: "80ms" }}
         >
-          One wallet,
+          Shield once,
           <br />
-          every chain,
+          act anywhere,
           <br />
-          <span className="shimmer">no trace.</span>
+          <span className="shimmer">leave no trace.</span>
         </h1>
 
         <p

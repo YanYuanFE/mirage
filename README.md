@@ -1,6 +1,6 @@
 # Mirage
 
-**One wallet, every chain, no trace.**
+**Shield once, act anywhere, leave no trace.**
 
 Mirage is a privacy superapp built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon). It turns the STRK20 shielded pool on Starknet into a privacy gateway to 35+ chains: shield any ERC-20 on Starknet, then send value to any supported chain — BTC, Base, Solana, Arbitrum, TON, and more — with no on-chain link between your main wallet and the destination address.
 
