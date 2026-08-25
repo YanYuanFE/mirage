@@ -1,0 +1,14 @@
+# Phala Cloud CVM — STRK20 transaction prover.
+# TDX hosts (Sapphire Rapids) have AVX-512, which the prover binary requires.
+# Deploy via cloud.phala.com → Deploy → CVM → paste this compose file.
+services:
+  prover:
+    image: ghcr.io/starkware-libs/starknet-privacy/transaction-prover:PRIVACY-0.14.3-RC.2
+    ports:
+      - "3000:3000"
+    environment:
+      - RPC_URL=${RPC_URL}
+      - CHAIN_ID=SN_MAIN
+      - MAX_CONCURRENT_REQUESTS=1
+      - CORS_ALLOW_ORIGIN=*
+    restart: unless-stopped
