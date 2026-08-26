@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { WalletAccountV6, num, validateAndParseAddress, walletV6 } from "starknet";
+import {
+  WalletAccountV6,
+  num,
+  transaction,
+  validateAndParseAddress,
+  walletV6,
+} from "starknet";
 import type { WALLET_API } from "@starknet-io/types-js";
 import { createStore } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
@@ -40,6 +46,8 @@ import {
 import { buildPlan, executePlan, loadPlan, savePlan, type Plan } from "@/lib/engine";
 import { MarkIcon } from "@/components/MarkIcon";
 import { ChainIcon } from "@/components/ChainIcon";
+import { POOL_TOKENS, tokenBySymbol, fmtUnits } from "@/lib/tokens";
+import { avnuQuote, avnuBuildPrivate } from "@/lib/avnu";
 import type { Theme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +93,8 @@ export default function WalletApp({
 
   const [tab, setTab] = useState<Tab>("shield");
   const [swapDir, setSwapDir] = useState<SwapDir>("out");
+  // token to shield / private-send (the pool accepts any ERC-20)
+  const [shieldSym, setShieldSym] = useState("STRK");
   const [amount, setAmount] = useState("10");
   const [recipient, setRecipient] = useState("");
   const [busy, setBusy] = useState(false);
@@ -128,6 +138,14 @@ export default function WalletApp({
   }, []);
 
   const onMainnet = chainId === SN_MAIN;
+  const shieldToken = useMemo(
+    () => tokenBySymbol(shieldSym) ?? POOL_TOKENS[0],
+    [shieldSym],
+  );
+  const shieldTokenItems = useMemo(
+    () => Object.fromEntries(POOL_TOKENS.map((t) => [t.symbol, t.symbol])),
+    [],
+  );
   const chains = useMemo(
     () => [...new Set(tokens.map((t) => t.blockchain))].sort(),
     [tokens],
@@ -194,9 +212,10 @@ export default function WalletApp({
 
   async function refreshBalances() {
     if (!address) return;
+    const token = shieldToken.address;
     try {
       const res = await provider.callContract({
-        contractAddress: STRK,
+        contractAddress: token,
         entrypoint: "balanceOf",
         calldata: [address],
       });
@@ -207,12 +226,12 @@ export default function WalletApp({
     try {
       const r: any = await wa?.strk20Balances([]);
       const arr = Array.isArray(r) ? r : (r?.value ?? []);
-      const strk = arr.find(
+      const entry = arr.find(
         (b: any) =>
           num.toBigInt(b?.token ?? b?.token_address ?? b?.[0] ?? 0) ===
-          num.toBigInt(STRK),
+          num.toBigInt(token),
       );
-      setShieldedBal(strk ? num.toBigInt(strk.amount ?? strk.balance ?? strk[1]) : 0n);
+      setShieldedBal(entry ? num.toBigInt(entry.amount ?? entry.balance ?? entry[1]) : 0n);
     } catch {
       setShieldedBal(null);
     }
@@ -221,7 +240,7 @@ export default function WalletApp({
   useEffect(() => {
     refreshBalances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, wa]);
+  }, [address, wa, shieldToken.address]);
 
   async function submit(actions: WALLET_API.STRK20_ACTION[], title: string) {
     if (!wa) return undefined;
@@ -261,8 +280,14 @@ export default function WalletApp({
 
   const handleShield = () =>
     submit(
-      [{ type: "deposit", token: STRK, amount: num.toHex(parseStrk(amount)) }],
-      `Shield ${amount} STRK`,
+      [
+        {
+          type: "deposit",
+          token: shieldToken.address,
+          amount: num.toHex(parseUnits(amount, shieldToken.decimals)),
+        },
+      ],
+      `Shield ${amount} ${shieldToken.symbol}`,
     );
 
   const handleSend = () =>
@@ -270,13 +295,65 @@ export default function WalletApp({
       [
         {
           type: "transfer",
-          token: STRK,
-          amount: num.toHex(parseStrk(amount)),
+          token: shieldToken.address,
+          amount: num.toHex(parseUnits(amount, shieldToken.decimals)),
           recipient: validateAndParseAddress(recipient),
         },
       ],
-      `Private send ${amount} STRK`,
+      `Private send ${amount} ${shieldToken.symbol}`,
     );
+
+  // In-pool private swap of a shielded non-STRK balance to STRK via the AVNU
+  // anonymizer (withdraw to executor → open note → invoke). One atomic tx the
+  // wallet proves itself. Needed before exiting: 1Click only takes STRK.
+  async function handleConvert() {
+    if (!wa || shieldToken.symbol === "STRK") return;
+    const from = shieldToken;
+    let sellAmount: bigint;
+    try {
+      sellAmount = parseUnits(amount, from.decimals);
+    } catch {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setBusy(true);
+    const id = toast.loading("Quoting in-pool swap…");
+    let actions: WALLET_API.STRK20_ACTION[];
+    try {
+      const q = await avnuQuote({
+        sellToken: from.address,
+        buyToken: STRK,
+        sellAmount,
+      });
+      const built = await avnuBuildPrivate(q.quoteId);
+      const serialized = transaction.fromCallsToExecuteCalldata_cairo1(built.calls);
+      actions = [
+        {
+          type: "withdraw",
+          token: from.address,
+          amount: num.toHex(sellAmount),
+          recipient: built.executorAddress,
+        },
+        { type: "transfer", token: STRK, amount: "OPEN", recipient: address },
+        {
+          type: "invoke",
+          contract: built.executorAddress,
+          calldata: [
+            num.toHex(STRK),
+            ...serialized.map((x) => num.toHex(x)),
+            "${openNoteIds[0]}",
+          ],
+        },
+      ];
+      toast.dismiss(id);
+    } catch (e: any) {
+      toast.error(e?.message ?? String(e), { id });
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    await submit(actions, `Convert ${amount} ${from.symbol} → STRK`);
+  }
 
   async function withdrawTo(amountWei: bigint, depositAddress: string): Promise<string> {
     if (!wa) throw new Error("no wallet");
@@ -470,8 +547,8 @@ export default function WalletApp({
             <span className="absolute -right-6 -top-6 size-16 rounded-full bg-warm/15 blur-xl" />
             <span className="text-xs text-muted-foreground">Public</span>
             <span className="font-mono text-lg font-semibold">
-              {publicBal !== null ? fmtStrk(publicBal) : "–"}{" "}
-              <span className="text-sm text-muted-foreground">STRK</span>
+              {publicBal !== null ? fmtUnits(publicBal, shieldToken.decimals) : "–"}{" "}
+              <span className="text-sm text-muted-foreground">{shieldToken.symbol}</span>
             </span>
           </CardContent>
         </Card>
@@ -482,8 +559,8 @@ export default function WalletApp({
               <ShieldCheck className="size-3.5" /> Shielded
             </span>
             <span className="font-mono text-lg font-semibold">
-              {shieldedBal !== null ? fmtStrk(shieldedBal) : "–"}{" "}
-              <span className="text-sm text-muted-foreground">STRK</span>
+              {shieldedBal !== null ? fmtUnits(shieldedBal, shieldToken.decimals) : "–"}{" "}
+              <span className="text-sm text-muted-foreground">{shieldToken.symbol}</span>
             </span>
           </CardContent>
         </Card>
@@ -528,9 +605,33 @@ export default function WalletApp({
             </div>
           )}
 
+          {(tab === "shield" || tab === "send") && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Token</Label>
+              <Select
+                value={shieldSym}
+                onValueChange={(v) => setShieldSym(v ?? "STRK")}
+                items={shieldTokenItems}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72" alignItemWithTrigger={false}>
+                  {POOL_TOKENS.map((t) => (
+                    <SelectItem key={t.symbol} value={t.symbol}>
+                      {t.symbol}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {!(tab === "swap" && swapDir === "in") && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="amount">Amount (STRK)</Label>
+              <Label htmlFor="amount">
+                Amount ({tab === "swap" ? "STRK" : shieldToken.symbol})
+              </Label>
               <Input
                 id="amount"
                 value={amount}
@@ -778,6 +879,24 @@ export default function WalletApp({
                       ? `Send in ${chunkCount} chunks`
                       : "Send anywhere"}
             </Button>
+          )}
+
+          {address && tab === "shield" && shieldToken.symbol !== "STRK" && (
+            <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">
+              <span className="text-xs text-muted-foreground">
+                Exiting needs STRK. Convert your shielded {shieldToken.symbol} to
+                STRK privately, inside the pool.
+              </span>
+              <Button
+                variant="secondary"
+                className="w-full gap-2"
+                disabled={busy || !onMainnet}
+                onClick={handleConvert}
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                Convert {amount} {shieldToken.symbol} → STRK (in-pool)
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
