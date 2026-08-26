@@ -1,3 +1,9 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/1click/:path*",
+      "destination": "https://1click.chaindefuser.com/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
