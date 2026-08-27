@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   WalletAccountV6,
@@ -106,6 +106,9 @@ export default function WalletApp({
   const [chunkCount, setChunkCount] = useState(3);
   const [plan, setPlan] = useState<Plan | null>(() => loadPlan());
   const [running, setRunning] = useState(false);
+  // `running` state lands a render later, so two fast clicks can both pass the
+  // disabled check and drive the same plan twice. This ref closes that window.
+  const runningRef = useRef(false);
 
   // return (inbound): a destination-chain asset swapped back to shielded STRK
   const [srcChain, setSrcChain] = useState("");
@@ -357,18 +360,40 @@ export default function WalletApp({
 
   async function withdrawTo(amountWei: bigint, depositAddress: string): Promise<string> {
     if (!wa) throw new Error("no wallet");
+    console.log(
+      `[mirage] withdraw submit ${fmtStrk(amountWei)} STRK → ${depositAddress}`,
+    );
     const r = await wa.strk20InvokeTransaction([
       { type: "withdraw", token: STRK, amount: num.toHex(amountWei), recipient: depositAddress },
     ]);
+    console.log(`[mirage] withdraw tx ${r.transaction_hash}`);
     await provider.waitForTransaction(r.transaction_hash, { retries: 400, retryInterval: 3000 });
     refreshBalances();
     return r.transaction_hash;
+  }
+
+  // Single entry point for plan execution — the ref guard makes a second
+  // concurrent run impossible, whatever triggered it.
+  async function runPlan(p: Plan) {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      const done = await executePlan(p, withdrawTo, setPlan);
+      done.chunks.every((c) => c.status === "success")
+        ? toast.success("Plan complete — all chunks delivered")
+        : toast.warning("Plan stopped — resume from the plan panel");
+    } finally {
+      runningRef.current = false;
+      setRunning(false);
+    }
   }
 
   async function handleAnywhere() {
     if (!wa || !destAsset || !recipient) return;
 
     if (chunkCount > 1) {
+      if (runningRef.current) return;
       const p = buildPlan({
         totalWei: parseStrk(amount),
         destAsset,
@@ -379,16 +404,8 @@ export default function WalletApp({
       });
       savePlan(p);
       setPlan(p);
-      setRunning(true);
       toast.info(`Executing ${chunkCount}-chunk private plan…`);
-      try {
-        const done = await executePlan(p, withdrawTo, setPlan);
-        done.chunks.every((c) => c.status === "success")
-          ? toast.success("Plan complete — all chunks delivered")
-          : toast.warning("Plan stopped — resume from the plan panel");
-      } finally {
-        setRunning(false);
-      }
+      await runPlan(p);
       return;
     }
 
@@ -419,12 +436,7 @@ export default function WalletApp({
 
   async function resumePlan() {
     if (!plan || !wa) return;
-    setRunning(true);
-    try {
-      await executePlan(plan, withdrawTo, setPlan);
-    } finally {
-      setRunning(false);
-    }
+    await runPlan(plan);
   }
 
   // Return leg: swap a destination-chain asset back to STRK on the user's
