@@ -74,6 +74,19 @@ type SwapDir = "out" | "in";
 
 const LAST_WALLET_KEY = "mirage.wallet";
 
+// Spending a note needs a proof, and the wallet gets that from its own backend.
+// When that backend 500s the wallet surfaces a bare "UNKNOWN_ERROR", which
+// reads like an app bug — name it for what it is so users retry instead.
+function walletErrorMessage(e: any): string {
+  const msg = e?.message ?? String(e);
+  const cause = (e?.cause as any)?.message ?? "";
+  if (/NOT_REGISTERED/.test(msg))
+    return "Account not registered — register once at strk20.starknet.io/app, then retry.";
+  if (/Internal server error/i.test(cause) || /UNKNOWN_ERROR/.test(msg))
+    return "The wallet's proving service failed (shielding still works). Wait a moment and retry.";
+  return `Rejected: ${msg}`;
+}
+
 export default function WalletApp({
   theme,
   onToggleTheme,
@@ -284,13 +297,7 @@ export default function WalletApp({
       const r = await wa.strk20InvokeTransaction(actions);
       txHash = r.transaction_hash;
     } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      toast.error(
-        /NOT_REGISTERED/.test(msg)
-          ? "Account not registered — register once at strk20.starknet.io/app, then retry."
-          : `Rejected: ${msg}`,
-        { id },
-      );
+      toast.error(walletErrorMessage(e), { id });
       setBusy(false);
       return undefined;
     }
@@ -479,7 +486,7 @@ export default function WalletApp({
         action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
       });
     } catch (e: any) {
-      toast.error(e?.message ?? String(e), { id });
+      toast.error(walletErrorMessage(e), { id });
     } finally {
       setBusy(false);
     }
