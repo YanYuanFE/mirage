@@ -111,6 +111,7 @@ export default function WalletApp({
   // `running` state lands a render later, so two fast clicks can both pass the
   // disabled check and drive the same plan twice. This ref closes that window.
   const runningRef = useRef(false);
+  const actionRef = useRef(false);
 
   // return (inbound): a destination-chain asset swapped back to shielded STRK
   const [srcChain, setSrcChain] = useState("");
@@ -399,6 +400,20 @@ export default function WalletApp({
     await provider.waitForTransaction(r.transaction_hash, { retries: 400, retryInterval: 3000 });
     refreshBalances();
     return r.transaction_hash;
+  }
+
+  // Wraps a money-moving click: drops focus so a stray Enter after the wallet
+  // dialog closes can't re-fire the button (base-ui synthesizes a click from
+  // Enter), and holds a synchronous lock so nothing can run twice in parallel.
+  function once(fn: () => unknown) {
+    return (e: { currentTarget: HTMLElement }) => {
+      e.currentTarget.blur();
+      if (actionRef.current) return;
+      actionRef.current = true;
+      Promise.resolve(fn()).finally(() => {
+        actionRef.current = false;
+      });
+    };
   }
 
   // Single entry point for plan execution — the ref guard makes a second
@@ -884,7 +899,7 @@ export default function WalletApp({
                 size="lg"
                 className="mt-1 w-full"
                 disabled={busy}
-                onClick={handleShieldReturn}
+                onClick={once(handleShieldReturn)}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
                 Shield {retQuote?.amountOutFormatted} STRK
@@ -894,7 +909,7 @@ export default function WalletApp({
                 size="lg"
                 className="mt-1 w-full"
                 disabled={busy || !onMainnet || !srcAsset || !retAmount || !srcRefund || !!retQuote}
-                onClick={handleReturn}
+                onClick={once(handleReturn)}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
                 {retQuote ? "Waiting for your deposit…" : "Get deposit address"}
@@ -905,9 +920,9 @@ export default function WalletApp({
               size="lg"
               className="mt-1 w-full"
               disabled={ctaDisabled}
-              onClick={
-                tab === "shield" ? handleShield : tab === "send" ? handleSend : handleAnywhere
-              }
+              onClick={once(
+                tab === "shield" ? handleShield : tab === "send" ? handleSend : handleAnywhere,
+              )}
             >
               {(busy || running) && <Loader2 className="size-4 animate-spin" />}
               {tab === "shield"
@@ -932,7 +947,7 @@ export default function WalletApp({
                 variant="secondary"
                 className="w-full gap-2"
                 disabled={busy || !onMainnet}
-                onClick={handleConvert}
+                onClick={once(handleConvert)}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
                 Convert {amount} {shieldToken.symbol} → STRK (in-pool)
@@ -953,7 +968,7 @@ export default function WalletApp({
               {!running && (
                 <div className="flex gap-1.5">
                   {plan.chunks.some((c) => c.status !== "success") && (
-                    <Button variant="ghost" size="sm" onClick={resumePlan}>
+                    <Button variant="ghost" size="sm" onClick={once(resumePlan)}>
                       Resume
                     </Button>
                   )}
