@@ -393,9 +393,16 @@ export default function WalletApp({
     console.log(
       `[mirage] withdraw submit ${fmtStrk(amountWei)} STRK → ${depositAddress}`,
     );
-    const r = await wa.strk20InvokeTransaction([
-      { type: "withdraw", token: STRK, amount: num.toHex(amountWei), recipient: depositAddress },
-    ]);
+    let r;
+    try {
+      r = await wa.strk20InvokeTransaction([
+        { type: "withdraw", token: STRK, amount: num.toHex(amountWei), recipient: depositAddress },
+      ]);
+    } catch (e) {
+      // the wallet's message is often just a code; keep the whole object
+      console.error("[mirage] withdraw rejected", e);
+      throw e;
+    }
     console.log(`[mirage] withdraw tx ${r.transaction_hash}`);
     await provider.waitForTransaction(r.transaction_hash, { retries: 400, retryInterval: 3000 });
     refreshBalances();
