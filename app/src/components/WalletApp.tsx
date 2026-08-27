@@ -72,6 +72,8 @@ import {
 type Tab = "shield" | "send" | "swap";
 type SwapDir = "out" | "in";
 
+const LAST_WALLET_KEY = "mirage.wallet";
+
 export default function WalletApp({
   theme,
   onToggleTheme,
@@ -207,11 +209,38 @@ export default function WalletApp({
       setAddress(validateAndParseAddress(accounts[0]));
       setChainId((await walletV6.requestChainId(w)) as string);
       setPickerOpen(false);
+      localStorage.setItem(LAST_WALLET_KEY, w.name);
       toast.success(`Connected ${w.name}`);
     } catch (e: any) {
       toast.error(e?.message ?? "Connection failed");
     }
   }
+
+  // Restore the session on reload: silent mode reuses the permission the user
+  // already granted, so it reconnects without a prompt (and stays quiet if the
+  // wallet has since revoked it).
+  useEffect(() => {
+    if (wa) return;
+    const last = localStorage.getItem(LAST_WALLET_KEY);
+    const w = last && wallets.find((x) => x.name === last);
+    if (!w) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const account = await WalletAccountV6.connectSilent(provider, w);
+        const accounts = await walletV6.requestAccounts(w, true);
+        if (cancelled || !Array.isArray(accounts) || !accounts[0]) return;
+        setWa(account);
+        setAddress(validateAndParseAddress(accounts[0]));
+        setChainId((await walletV6.requestChainId(w)) as string);
+      } catch {
+        localStorage.removeItem(LAST_WALLET_KEY);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallets, wa]);
 
   async function refreshBalances() {
     if (!address) return;
