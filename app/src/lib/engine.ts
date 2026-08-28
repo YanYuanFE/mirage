@@ -107,7 +107,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // change (already-persisted). Resumable: completed chunks are skipped.
 export async function executePlan(
   plan: Plan,
-  withdraw: (amountWei: bigint, depositAddress: string) => Promise<string>,
+  withdraw: (
+    amountWei: bigint,
+    depositAddress: string,
+    onSubmitted?: (txHash: string) => void,
+  ) => Promise<string>,
   onUpdate: (p: Plan) => void,
 ): Promise<Plan> {
   const update = (patch: Partial<Chunk>, i: number) => {
@@ -191,7 +195,11 @@ export async function executePlan(
 
     try {
       update({ status: "awaiting_wallet" }, i);
-      const txHash = await withdraw(BigInt(c.amountWei), quote.depositAddress);
+      // Persist the hash the moment it exists: if we die while waiting for the
+      // block, resume must know this chunk already withdrew.
+      const txHash = await withdraw(BigInt(c.amountWei), quote.depositAddress, (h) =>
+        update({ status: "bridging", txHash: h }, i),
+      );
       update({ status: "bridging", txHash }, i);
     } catch (e: any) {
       update({ status: "failed", error: `wallet: ${e?.message ?? e}` }, i);

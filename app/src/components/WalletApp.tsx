@@ -300,7 +300,12 @@ export default function WalletApp({
       setBusy(false);
       return undefined;
     }
-    toast.loading(`${title} — confirming on-chain…`, { id });
+    // The relayer can take a while to land the tx; show the hash right away so
+    // the wait doesn't look like a stuck dialog.
+    toast.loading(`${title} — submitted, waiting for the block…`, {
+      id,
+      action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
+    });
     try {
       await provider.waitForTransaction(txHash, { retries: 400, retryInterval: 3000 });
       toast.success(`${title} confirmed`, {
@@ -415,7 +420,11 @@ export default function WalletApp({
     await submit(actions, `Convert ${amount} ${from.symbol} → STRK`);
   }
 
-  async function withdrawTo(amountWei: bigint, depositAddress: string): Promise<string> {
+  async function withdrawTo(
+    amountWei: bigint,
+    depositAddress: string,
+    onSubmitted?: (txHash: string) => void,
+  ): Promise<string> {
     if (!wa) throw new Error("no wallet");
     console.log(
       `[mirage] withdraw submit ${fmtStrk(amountWei)} STRK → ${depositAddress}`,
@@ -431,6 +440,7 @@ export default function WalletApp({
       throw e;
     }
     console.log(`[mirage] withdraw tx ${r.transaction_hash}`);
+    onSubmitted?.(r.transaction_hash);
     await provider.waitForTransaction(r.transaction_hash, { retries: 400, retryInterval: 3000 });
     refreshBalances();
     return r.transaction_hash;
@@ -507,7 +517,12 @@ export default function WalletApp({
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
         { id },
       );
-      const txHash = await withdrawTo(total, q.depositAddress);
+      const txHash = await withdrawTo(total, q.depositAddress, (h) =>
+        toast.loading("Withdrawal submitted — waiting for the block…", {
+          id,
+          action: { label: "View", onClick: () => window.open(explorerTx(h), "_blank") },
+        }),
+      );
       toast.success(`Sent — ${q.amountOutFormatted} ${destToken?.symbol} en route`, {
         id,
         action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
