@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.ts",
-    "dev": "node --watch src/server.ts"
+    "dev": "node --watch src/server.ts",
+    "test": "node --experimental-strip-types --experimental-test-module-mocks test-resume.mjs"
   },
   "dependencies": {
     "starknet": "10.4.0"

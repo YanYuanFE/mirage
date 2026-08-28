@@ -22,12 +22,26 @@ function json(res: any, code: number, body: unknown): void {
   res.end(JSON.stringify(body, null, 2));
 }
 
+// Live mode spends real pool funds and plans expose recipients and amounts —
+// both are unauthenticated otherwise. Refuse to run rather than leak either.
+if (!cfg.dryRun && !cfg.apiToken) {
+  console.error("API_TOKEN is required when DRY_RUN is not 1 — refusing to start");
+  process.exit(1);
+}
+
+function authorized(req: any): boolean {
+  if (!cfg.apiToken) return true; // dry-run only
+  return req.headers.authorization === `Bearer ${cfg.apiToken}`;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (req.method === "GET" && url.pathname === "/health") {
     return json(res, 200, { ok: true, ...engineStatus() });
   }
+
+  if (!authorized(req)) return json(res, 401, { error: "unauthorized" });
 
   if (req.method === "GET" && url.pathname === "/plans") {
     return json(res, 200, allPlans());

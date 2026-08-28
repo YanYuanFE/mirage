@@ -25,6 +25,22 @@ export async function runPlan(plan: Plan): Promise<void> {
       const c = plan.chunks[i];
       if (c.status === "success") continue;
 
+      // Funds already left the pool for this chunk: a restart must resume the
+      // existing intent, never broadcast a second withdrawal.
+      if (c.txHash && c.depositAddress) {
+        if (!(await settle(c.depositAddress, i, update))) return;
+        continue;
+      }
+
+      // Crashed mid-withdrawal — only safe to retry if nothing has arrived.
+      if (c.status === "withdrawing" && c.depositAddress) {
+        const s = await getStatus(c.depositAddress).catch(() => null);
+        if (s && s.status !== "PENDING_DEPOSIT") {
+          if (!(await settle(c.depositAddress, i, update))) return;
+          continue;
+        }
+      }
+
       if (c.status === "scheduled" && c.delayMs > 0) await sleep(c.delayMs);
 
       let depositAddress: string;
@@ -58,28 +74,35 @@ export async function runPlan(plan: Plan): Promise<void> {
         continue;
       }
 
-      let settled = false;
-      for (let tries = 0; tries < 240 && !settled; tries++) {
-        await sleep(5000);
-        try {
-          const s = await getStatus(depositAddress);
-          if (s.status === "SUCCESS") {
-            update(i, { status: "success", destTxHash: s.destTxHash });
-            settled = true;
-          } else if (s.status === "REFUNDED" || s.status === "FAILED") {
-            update(i, { status: "failed", error: s.status });
-            return;
-          }
-        } catch {
-          /* transient; keep polling */
-        }
-      }
-      if (!settled) {
-        update(i, { status: "failed", error: "timeout waiting for settlement" });
-        return;
-      }
+      if (!(await settle(depositAddress, i, update))) return;
     }
   } finally {
     running.delete(plan.id);
   }
+}
+
+// Polls one chunk's intent to a terminal state; false means the plan stops.
+async function settle(
+  depositAddress: string,
+  i: number,
+  update: (i: number, patch: Partial<Chunk>) => void,
+): Promise<boolean> {
+  for (let tries = 0; tries < 240; tries++) {
+    await sleep(5000);
+    try {
+      const s = await getStatus(depositAddress);
+      if (s.status === "SUCCESS") {
+        update(i, { status: "success", destTxHash: s.destTxHash });
+        return true;
+      }
+      if (s.status === "REFUNDED" || s.status === "FAILED") {
+        update(i, { status: "failed", error: s.status });
+        return false;
+      }
+    } catch {
+      /* transient; keep polling */
+    }
+  }
+  update(i, { status: "failed", error: "timeout waiting for settlement" });
+  return false;
 }

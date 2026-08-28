@@ -56,9 +56,15 @@ Step by step:
 
 1. **Shield** — user connects their existing wallet and shields any ERC-20 into the STRK20 pool. This is the only transaction their main wallet ever signs.
 2. **Convert** — if the shielded asset isn't STRK, swap to STRK inside the pool through the AVNU anonymizer (`privacy_invoke`); result is credited back to private notes.
-3. **Exit** — private in-pool transfer to a fresh execution account, which unshields. The fresh-account hop makes the flow work even if unshield turns out to be restricted to self (open question §9).
+3. **Exit** — the pool withdrawal pays the 1Click deposit address directly. The ZK proof is what breaks the link to the depositor, so no intermediate hop is needed for unlinkability. _Not shipped:_ the fresh execution account described below, which would also isolate refunds.
 4. **Quote & deposit** — workflow engine requests a 1Click quote (origin: Starknet STRK; destination: user's chosen asset/chain/address) and sends the unshielded STRK to the returned one-time deposit address.
-5. **Deliver** — NEAR Intents solvers fill the intent on the destination chain (dry-run measured estimate: ~27 s). Engine polls status until settled; refunds return to the fresh account, never the main wallet.
+5. **Deliver** — NEAR Intents solvers fill the intent on the destination chain (dry-run measured estimate: ~27 s). Engine polls status until settled.
+
+> **Refund leak (known, shipped behaviour).** `refundTo` is currently the user's
+> own Starknet account. If an intent refunds, that refund lands on the main
+> wallet and creates exactly the on-chain link the pool removed. A fresh
+> execution account as the refund address closes this; until it ships, treat a
+> refunded exit as deanonymising for that transfer.
 
 Privacy boundary at each hop:
 
@@ -128,7 +134,20 @@ Executes a send as a plan, not a single transfer:
 Two phases:
 
 1. **Browser phase (shipped)** — `app/src/lib/engine.ts`. The plan runs client-side; each chunk's pool withdrawal goes through the user's wallet (one approval per chunk, relayer-submitted on-chain). State persists in localStorage so an interrupted plan resumes.
-2. **Headless phase (scaffolded in `server/`, live withdrawals blocked on the mainnet proving URL, issue #135)** — the same plan model server-side: node:http API (`POST /plans`), JSON-file persistence, restart-resume, real 1Click quoting today via `DRY_RUN=1`. `server/src/strk20.ts` is the single plug-in point: fill `PROVING_SERVICE_URL` + engine account env and withdrawals go live. One user authorization, fully automatic execution — and the component that ships into the TEE (§8).
+2. **Headless phase (scaffolded in `server/`, live withdrawals blocked on the mainnet proving URL, issue #135)** — the same plan model server-side: node:http API (`POST /plans`), JSON-file persistence, restart-resume, real 1Click quoting today via `DRY_RUN=1`. `server/src/strk20.ts` is the single plug-in point: fill `PROVING_SERVICE_URL` + engine account env and withdrawals go live. This is the component that ships into the TEE (§8).
+
+   Its trust model today is a **single-tenant** one: the engine spends its own
+   pool balance, and `API_TOKEN` (required whenever `DRY_RUN` is off) gates every
+   route. There is no per-user identity, spend limit, or plan ownership — so it
+   is safe to run for yourself, not to expose as a shared service. The
+   user-authorisation model that multi-tenant operation needs is designed in §8
+   and unimplemented.
+
+**Resume safety.** A chunk that already has a withdrawal transaction is never
+withdrawn again: on resume the executor re-attaches to that chunk's existing
+deposit address and polls it to settlement. A chunk interrupted while the wallet
+dialog was open is probed first, and only re-withdrawn if 1Click confirms
+nothing arrived.
 
 ## 6. Privacy model & honest limitations
 

@@ -8,6 +8,7 @@ services:
       - engine-data:/data
     environment:
       - DRY_RUN=${DRY_RUN:-1}
+      - API_TOKEN=${API_TOKEN:-}
       - PROVING_SERVICE_URL=${PROVING_SERVICE_URL:-}
       - INDEXER_URL=${INDEXER_URL:-}
       - ACCOUNT_ADDRESS=${ACCOUNT_ADDRESS:-}

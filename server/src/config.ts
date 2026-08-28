@@ -14,6 +14,9 @@ export const cfg = {
   accountPrivateKey: process.env.ACCOUNT_PRIVATE_KEY ?? "",
   viewingKey: process.env.VIEWING_KEY ?? "",
   oneClickJwt: process.env.ONECLICK_JWT ?? "",
+  // Every route is behind this token: the engine spends its own pool balance,
+  // so an open port is an open wallet.
+  apiToken: process.env.API_TOKEN ?? "",
   dryRun: process.env.DRY_RUN === "1",
   stateFile: process.env.STATE_FILE ?? new URL("../state.json", import.meta.url).pathname,
 };

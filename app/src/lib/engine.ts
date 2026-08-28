@@ -116,9 +116,55 @@ export async function executePlan(
     onUpdate({ ...plan, chunks: [...plan.chunks] });
   };
 
+  // Polls one chunk's 1Click intent to a terminal state. Returns false once the
+  // chunk is settled as failed/timed out (caller stops the plan).
+  const settle = async (depositAddress: string, i: number): Promise<boolean> => {
+    for (let tries = 0; tries < 120; tries++) {
+      await sleep(5000);
+      try {
+        const s = await getStatus(pad(depositAddress));
+        if (s.status === "SUCCESS") {
+          update(
+            {
+              status: "success",
+              destTxHash: s.swapDetails?.destinationChainTxHashes?.[0]?.hash,
+            },
+            i,
+          );
+          return true;
+        }
+        if (s.status === "REFUNDED" || s.status === "FAILED") {
+          update({ status: "failed", error: s.status }, i);
+          return false;
+        }
+      } catch {
+        /* keep polling */
+      }
+    }
+    update({ status: "failed", error: "timeout waiting for settlement" }, i);
+    return false;
+  };
+
   for (let i = 0; i < plan.chunks.length; i++) {
     const c = plan.chunks[i];
     if (c.status === "success") continue;
+
+    // Money already left the pool for this chunk — never withdraw again on
+    // resume; pick the intent back up from its existing deposit address.
+    if (c.txHash && c.depositAddress) {
+      if (!(await settle(c.depositAddress, i))) return plan;
+      continue;
+    }
+
+    // Interrupted while the wallet dialog was open: we never saw a hash, so ask
+    // 1Click whether the funds arrived before risking a second withdrawal.
+    if (c.status === "awaiting_wallet" && c.depositAddress) {
+      const s = await getStatus(pad(c.depositAddress)).catch(() => null);
+      if (s && s.status !== "PENDING_DEPOSIT") {
+        if (!(await settle(c.depositAddress, i))) return plan;
+        continue;
+      }
+    }
 
     if (c.status === "scheduled" && c.delayMs > 0) await sleep(c.delayMs);
 
@@ -152,31 +198,7 @@ export async function executePlan(
       return plan;
     }
 
-    // Poll 1Click until this chunk settles (status API wants the padded address).
-    let settled = false;
-    for (let tries = 0; tries < 120 && !settled; tries++) {
-      await sleep(5000);
-      try {
-        const s = await getStatus(pad(quote.depositAddress));
-        if (s.status === "SUCCESS") {
-          update(
-            {
-              status: "success",
-              destTxHash: s.swapDetails?.destinationChainTxHashes?.[0]?.hash,
-            },
-            i,
-          );
-          settled = true;
-        } else if (s.status === "REFUNDED" || s.status === "FAILED") {
-          update({ status: "failed", error: s.status }, i);
-          return plan;
-        }
-      } catch {
-        /* keep polling */
-      }
-    }
-    if (!settled) {
-      update({ status: "failed", error: "timeout waiting for settlement" }, i);
+    if (!(await settle(quote.depositAddress, i))) {
       return plan;
     }
   }

@@ -30,7 +30,6 @@ import {
   provider,
   explorerTx,
   fmtStrk,
-  parseStrk,
   parseUnits,
   shortHex,
 } from "@/lib/config";
@@ -318,30 +317,51 @@ export default function WalletApp({
     }
   }
 
-  const handleShield = () =>
-    submit(
-      [
-        {
-          type: "deposit",
-          token: shieldToken.address,
-          amount: num.toHex(parseUnits(amount, shieldToken.decimals)),
-        },
-      ],
+  // parseUnits/validateAndParseAddress throw on junk; check at the entry so the
+  // user gets a message instead of an exception mid-flow.
+  function parsedAmount(decimals: number): bigint | null {
+    let v: bigint;
+    try {
+      v = parseUnits(amount, decimals);
+    } catch {
+      toast.error("Enter a valid amount");
+      return null;
+    }
+    if (v <= 0n) {
+      toast.error("Amount must be greater than zero");
+      return null;
+    }
+    return v;
+  }
+
+  function parsedRecipient(): string | null {
+    try {
+      return validateAndParseAddress(recipient.trim());
+    } catch {
+      toast.error("Enter a valid Starknet address");
+      return null;
+    }
+  }
+
+  const handleShield = () => {
+    const v = parsedAmount(shieldToken.decimals);
+    if (v === null) return;
+    return submit(
+      [{ type: "deposit", token: shieldToken.address, amount: num.toHex(v) }],
       `Shield ${amount} ${shieldToken.symbol}`,
     );
+  };
 
-  const handleSend = () =>
-    submit(
-      [
-        {
-          type: "transfer",
-          token: shieldToken.address,
-          amount: num.toHex(parseUnits(amount, shieldToken.decimals)),
-          recipient: validateAndParseAddress(recipient),
-        },
-      ],
+  const handleSend = () => {
+    const v = parsedAmount(shieldToken.decimals);
+    if (v === null) return;
+    const to = parsedRecipient();
+    if (to === null) return;
+    return submit(
+      [{ type: "transfer", token: shieldToken.address, amount: num.toHex(v), recipient: to }],
       `Private send ${amount} ${shieldToken.symbol}`,
     );
+  };
 
   // In-pool private swap of a shielded non-STRK balance to STRK via the AVNU
   // anonymizer (withdraw to executor → open note → invoke). One atomic tx the
@@ -424,9 +444,14 @@ export default function WalletApp({
       e.currentTarget.blur();
       if (actionRef.current) return;
       actionRef.current = true;
-      Promise.resolve(fn()).finally(() => {
-        actionRef.current = false;
-      });
+      // fn runs inside the chain so a synchronous throw becomes a rejection —
+      // otherwise the lock would never be released and every button goes dead.
+      Promise.resolve()
+        .then(fn)
+        .catch((err) => toast.error(walletErrorMessage(err)))
+        .finally(() => {
+          actionRef.current = false;
+        });
     };
   }
 
@@ -449,11 +474,13 @@ export default function WalletApp({
 
   async function handleAnywhere() {
     if (!wa || !destAsset || !recipient) return;
+    const total = parsedAmount(18); // exits are always STRK
+    if (total === null) return;
 
     if (chunkCount > 1) {
       if (runningRef.current) return;
       const p = buildPlan({
-        totalWei: parseStrk(amount),
+        totalWei: total,
         destAsset,
         destLabel: destToken ? `${destToken.symbol} on ${destToken.blockchain}` : destAsset,
         recipient: recipient.trim(),
@@ -471,7 +498,7 @@ export default function WalletApp({
     const id = toast.loading("Requesting route…");
     try {
       const q = await requestQuote({
-        amountWei: parseStrk(amount),
+        amountWei: total,
         destinationAsset: destAsset,
         recipient: recipient.trim(),
         refundTo: address,
@@ -480,7 +507,7 @@ export default function WalletApp({
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
         { id },
       );
-      const txHash = await withdrawTo(parseStrk(amount), q.depositAddress);
+      const txHash = await withdrawTo(total, q.depositAddress);
       toast.success(`Sent — ${q.amountOutFormatted} ${destToken?.symbol} en route`, {
         id,
         action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
