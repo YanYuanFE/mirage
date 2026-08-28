@@ -291,9 +291,7 @@ export default function WalletApp({
   async function submit(actions: WALLET_API.STRK20_ACTION[], title: string) {
     if (!wa) return undefined;
     setBusy(true);
-    const id = toast.loading("Confirm in your wallet…", {
-      cancel: { label: "Stuck?", onClick: unstick },
-    });
+    const id = toast.loading("Confirm in your wallet…");
     let txHash: string;
     try {
       const r = await wa.strk20InvokeTransaction(actions);
@@ -452,15 +450,6 @@ export default function WalletApp({
   // Wraps a money-moving click: drops focus so a stray Enter after the wallet
   // dialog closes can't re-fire the button (base-ui synthesizes a click from
   // Enter), and holds a synchronous lock so nothing can run twice in parallel.
-  // A wallet that closes its dialog without answering leaves our promise
-  // pending, and with it every lock. Give the user a way to take the UI back.
-  function unstick() {
-    setBusy(false);
-    setRunning(false);
-    runningRef.current = false;
-    actionRef.current = false;
-  }
-
   function once(fn: () => unknown) {
     return (e: { currentTarget: HTMLElement }) => {
       e.currentTarget.blur();
@@ -527,7 +516,7 @@ export default function WalletApp({
       });
       toast.loading(
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
-        { id, cancel: { label: "Stuck?", onClick: unstick } },
+        { id },
       );
       const txHash = await withdrawTo(total, q.depositAddress, (h) =>
         toast.loading("Withdrawal submitted — waiting for the block…", {
