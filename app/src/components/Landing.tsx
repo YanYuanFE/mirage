@@ -11,12 +11,17 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkIcon } from "@/components/MarkIcon";
+import { ChainIcon } from "@/components/ChainIcon";
 import type { Theme } from "@/lib/theme";
 
-const CHAINS = [
-  "Bitcoin", "Ethereum", "Solana", "Base", "Arbitrum", "TON",
-  "Tron", "Aptos", "Sui", "Polygon", "Optimism", "Avalanche",
-  "Stellar", "NEAR", "Litecoin", "Dogecoin",
+// [1Click chain code, display name] — the code drives the icon.
+const CHAINS: [string, string][] = [
+  ["btc", "Bitcoin"], ["eth", "Ethereum"], ["sol", "Solana"], ["base", "Base"],
+  ["arb", "Arbitrum"], ["ton", "TON"], ["tron", "Tron"], ["aptos", "Aptos"],
+  ["sui", "Sui"], ["pol", "Polygon"], ["op", "Optimism"], ["avax", "Avalanche"],
+  ["bsc", "BNB Chain"], ["stellar", "Stellar"], ["near", "NEAR"], ["zec", "Zcash"],
+  ["ltc", "Litecoin"], ["doge", "Dogecoin"], ["bera", "Berachain"], ["monad", "Monad"],
+  ["scroll", "Scroll"], ["hypercore", "Hyperliquid"], ["cardano", "Cardano"], ["xrp", "XRP"],
 ];
 
 const STEPS = [
@@ -231,22 +236,25 @@ export default function Landing({
       </section>
 
       {/* Chains marquee */}
-      <section className="mx-auto max-w-5xl px-6 py-10">
+      <section className="py-10">
         <p className="mb-5 text-center text-xs uppercase tracking-widest text-muted-foreground">
           Exit to any of 35+ chains
         </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {CHAINS.map((c) => (
-            <span
-              key={c}
-              className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground"
-            >
-              {c}
-            </span>
-          ))}
-          <span className="rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-sm text-primary">
-            + more
-          </span>
+        <div className="marquee-mask overflow-hidden">
+          <div className="marquee-track gap-2">
+            {[0, 1].map((pass) =>
+              CHAINS.map(([code, name]) => (
+                <span
+                  key={`${pass}-${code}`}
+                  aria-hidden={pass === 1}
+                  className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground"
+                >
+                  <ChainIcon chain={code} />
+                  {name}
+                </span>
+              )),
+            )}
+          </div>
         </div>
       </section>
 

@@ -202,7 +202,25 @@
     animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* chain marquee: the track holds the list twice, so -50% loops seamlessly */
+.marquee-mask {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 46s linear infinite;
+}
+.marquee-mask:hover .marquee-track {
+    animation-play-state: paused;
+}
+@keyframes marquee {
+    to { transform: translateX(-50%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .haze::before, .haze::after, .shimmer, .rise { animation: none; }
+    .haze::before, .haze::after, .shimmer, .rise, .marquee-track { animation: none; }
     .rise { opacity: 1; transform: none; }
+    .marquee-track { flex-wrap: wrap; justify-content: center; width: 100%; }
 }

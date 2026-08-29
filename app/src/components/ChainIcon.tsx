@@ -52,7 +52,6 @@ export function ChainIcon({ chain }: { chain: string }) {
       src={`https://icons.llamao.fi/icons/chains/rsz_${encodeURIComponent(name)}.jpg`}
       alt=""
       className="size-4 shrink-0 rounded-full"
-      loading="lazy"
       onError={() => setFailed(true)}
     />
   );
