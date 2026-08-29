@@ -34,11 +34,43 @@ export const POOL_TOKENS: PoolToken[] = [
   },
 ];
 
+// Sentinel for the "paste any ERC-20" option — the pool takes any token, this
+// list is only a shortcut for the common ones.
+export const CUSTOM_TOKEN = "__custom__";
+
 export const tokenBySymbol = (s: string) =>
   POOL_TOKENS.find((t) => t.symbol === s);
 
 export const tokenByAddress = (a: string) =>
   POOL_TOKENS.find((t) => BigInt(t.address) === BigInt(a));
+
+// Reads an arbitrary ERC-20's symbol and decimals straight off the chain.
+// `symbol()` is a felt short string on older tokens and a ByteArray on newer
+// ones; both shapes are handled, and the address stands in if neither decodes.
+export async function readToken(
+  address: string,
+  call: (req: {
+    contractAddress: string;
+    entrypoint: string;
+    calldata: string[];
+  }) => Promise<string[]>,
+  decodeShortString: (v: string) => string,
+): Promise<PoolToken> {
+  const dec = await call({ contractAddress: address, entrypoint: "decimals", calldata: [] });
+  const decimals = Number(BigInt(dec[0]));
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 30)
+    throw new Error("not an ERC-20 (bad decimals)");
+
+  let symbol = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  try {
+    const s = await call({ contractAddress: address, entrypoint: "symbol", calldata: [] });
+    if (s.length === 1) symbol = decodeShortString(s[0]);
+    else if (s.length >= 3 && BigInt(s[0]) === 0n) symbol = decodeShortString(s[1]);
+  } catch {
+    /* keep the address label */
+  }
+  return { symbol, address, decimals };
+}
 
 export function fmtUnits(amount: bigint, decimals: number): string {
   const base = 10n ** BigInt(decimals);

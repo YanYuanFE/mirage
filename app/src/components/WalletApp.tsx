@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   WalletAccountV6,
   num,
+  shortString,
   transaction,
   validateAndParseAddress,
   walletV6,
@@ -45,7 +46,14 @@ import {
 import { buildPlan, executePlan, loadPlan, savePlan, type Plan } from "@/lib/engine";
 import { MarkIcon } from "@/components/MarkIcon";
 import { ChainIcon } from "@/components/ChainIcon";
-import { POOL_TOKENS, tokenBySymbol, fmtUnits } from "@/lib/tokens";
+import {
+  POOL_TOKENS,
+  CUSTOM_TOKEN,
+  tokenBySymbol,
+  readToken,
+  fmtUnits,
+  type PoolToken,
+} from "@/lib/tokens";
 import { avnuQuote, avnuBuildPrivate } from "@/lib/avnu";
 import type { Theme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
@@ -110,6 +118,9 @@ export default function WalletApp({
   const [swapDir, setSwapDir] = useState<SwapDir>("out");
   // token to shield / private-send (the pool accepts any ERC-20)
   const [shieldSym, setShieldSym] = useState("STRK");
+  const [customAddr, setCustomAddr] = useState("");
+  const [customToken, setCustomToken] = useState<PoolToken | null>(null);
+  const [customErr, setCustomErr] = useState("");
   const [amount, setAmount] = useState("10");
   const [recipient, setRecipient] = useState("");
   const [busy, setBusy] = useState(false);
@@ -157,14 +168,46 @@ export default function WalletApp({
   }, []);
 
   const onMainnet = chainId === SN_MAIN;
+  const isCustom = shieldSym === CUSTOM_TOKEN;
   const shieldToken = useMemo(
-    () => tokenBySymbol(shieldSym) ?? POOL_TOKENS[0],
-    [shieldSym],
+    () => (isCustom ? customToken : tokenBySymbol(shieldSym)) ?? POOL_TOKENS[0],
+    [isCustom, customToken, shieldSym],
   );
   const shieldTokenItems = useMemo(
-    () => Object.fromEntries(POOL_TOKENS.map((t) => [t.symbol, t.symbol])),
-    [],
+    () => ({
+      ...Object.fromEntries(POOL_TOKENS.map((t) => [t.symbol, t.symbol])),
+      [CUSTOM_TOKEN]: customToken ? `${customToken.symbol} (custom)` : "Custom token…",
+    }),
+    [customToken],
   );
+
+  // Resolve a pasted ERC-20 off-chain-free: decimals decide the amount maths, so
+  // nothing is spendable until the contract answers.
+  useEffect(() => {
+    if (!isCustom) return;
+    const addr = customAddr.trim();
+    setCustomToken(null);
+    setCustomErr("");
+    if (!addr) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const parsed = validateAndParseAddress(addr);
+        const token = await readToken(
+          parsed,
+          (req) => provider.callContract(req) as Promise<string[]>,
+          shortString.decodeShortString,
+        );
+        if (!cancelled) setCustomToken(token);
+      } catch (e: any) {
+        if (!cancelled) setCustomErr(e?.message ?? "Could not read this token");
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [isCustom, customAddr]);
   const chains = useMemo(
     () => [...new Set(tokens.map((t) => t.blockchain))].sort(),
     [tokens],
@@ -612,6 +655,8 @@ export default function WalletApp({
     busy ||
     running ||
     !onMainnet ||
+    // a pasted token that hasn't resolved has no decimals — nothing to spend
+    (isCustom && !customToken && (tab === "shield" || tab === "send")) ||
     (tab === "send" && !recipient) ||
     (tab === "swap" && swapDir === "out" && (!recipient || !destAsset));
 
@@ -735,8 +780,26 @@ export default function WalletApp({
                       {t.symbol}
                     </SelectItem>
                   ))}
+                  <SelectItem value={CUSTOM_TOKEN}>Custom token…</SelectItem>
                 </SelectContent>
               </Select>
+              {isCustom && (
+                <>
+                  <Input
+                    value={customAddr}
+                    placeholder="ERC-20 contract address on Starknet"
+                    className="font-mono"
+                    onChange={(e) => setCustomAddr(e.target.value)}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {customToken
+                      ? `${customToken.symbol} · ${customToken.decimals} decimals`
+                      : customErr
+                        ? customErr
+                        : "The pool takes any ERC-20 — paste one to shield it."}
+                  </span>
+                </>
+              )}
             </div>
           )}
 
