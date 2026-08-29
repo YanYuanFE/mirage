@@ -216,6 +216,37 @@ Key rotation, reproducible builds, and attestation policy hardening remain post-
 2. **Atomic exit adapter** — can a custom anonymizer make "unshield + transfer to deposit address" one transaction? Worth building only after the two-step version works; it is the strongest possible answer to the "integration depth" criterion (30 %).
 3. **1Click JWT turnaround** — apply immediately; fall back to the 0.2 % fee if it doesn't arrive in time.
 
+## 9a. Roadmap
+
+Each item below is one missing dependency away, not one idea away — so each is
+listed with what actually blocks it.
+
+**1. Starknet as the privacy hub for every chain.** Both legs already run: value
+enters from any of 35 chains (§4a) and leaves to any of them (§4), which makes an
+EVM→EVM private transfer a round trip through the pool. The gap is that the user
+needs a Starknet wallet in the middle. A Starknet account derived from the user's
+existing EVM or Solana signature removes that — this is what organizer idea
+IDEA-06 describes — but a derived account has to prove its own withdrawals, so it
+needs the self-custodial proving service tracked in #135.
+
+**2. TEE-verified execution (§8).** The workflow engine is the last party in the
+design that can see anything — it holds the user's full plan — and remote
+attestation is what closes that gap. The engine is already containerized. Two
+things block the deploy: the same proving URL, and a hardware one worth recording
+because it is not documented anywhere else — the official prover image requires
+**AVX-512** on x86 and **SVE** on arm64. We reproduced `SIGILL` on four
+environments (two VPS, Apple Silicon, and both Phala TDX nodes, which are Sierra
+Forest and have no AVX-512); disassembly confirms `vmovups %zmm` and `z0.d`
+operands in the shipped binaries. A portable build would unblock self-hosting.
+
+**3. From settlement to execution.** Delivering value somewhere is not acting
+there. Funding a fresh, unlinkable identity that then trades on a venue is the
+difference between a privacy gateway and a privacy execution layer; a dry-run
+quote confirms NEAR Intents delivers USDC directly onto Hyperliquid's HyperCore
+trading layer (~37 s), so the rail exists. It needs the fresh execution account
+(§4) and honest scoping: a position on a venue stays public — what Mirage removes
+is the link between that position and you.
+
 ## 10. Judging criteria mapping
 
 | Criterion | Weight | Mirage's answer |

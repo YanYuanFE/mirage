@@ -13,6 +13,7 @@ const SECTIONS = [
   ["limits", "What we don't hide"],
   ["priorart", "Prior art"],
   ["status", "Shipped vs planned"],
+  ["roadmap", "Roadmap"],
 ] as const;
 
 function Section({
@@ -332,6 +333,51 @@ export default function Docs({
                     <li>Fresh execution account, which would isolate refunds</li>
                   </ul>
                 </div>
+              </div>
+            </Section>
+
+            <Section id="roadmap" eyebrow="What comes next" title="Where this goes">
+              <p>
+                Each of these is one missing dependency away, not one idea away. Naming
+                the blocker is more useful than naming the ambition.
+              </p>
+
+              <div className="flex flex-col gap-3">
+                {[
+                  {
+                    n: "01",
+                    title: "Starknet as the privacy hub for every chain",
+                    body: "Both legs already run: funds enter from any of 35 chains and leave to any of them, so an EVM-to-EVM private transfer is a round trip through the pool. What stops it being one product today is that the user needs a Starknet wallet in the middle.",
+                    blocker:
+                      "A Starknet account derived from the user's existing EVM or Solana signature would remove that — but a derived account has to prove its own withdrawals, which needs a self-custodial proving service (issue #135).",
+                  },
+                  {
+                    n: "02",
+                    title: "TEE-verified execution",
+                    body: "The workflow engine sees a user's full plan. That is the last party in the design who can see anything, and remote attestation is what closes it: the engine ships as a container into a confidential VM, and the app checks the attestation quote against the published image.",
+                    blocker:
+                      "The engine is containerized and ready. Two things block it: the same proving URL, and a CPU one — the official prover image needs AVX-512 on x86 or SVE on arm64, and the TDX hosts we tested have neither.",
+                  },
+                  {
+                    n: "03",
+                    title: "From settlement to execution",
+                    body: "Delivering value somewhere is not the same as acting there. Funding a fresh, unlinkable identity that then trades on a venue is the difference between a privacy gateway and a privacy execution layer — a dry run confirms intents can deliver USDC straight onto Hyperliquid's trading layer.",
+                    blocker:
+                      "Needs the fresh execution account, and honest scoping: a position on a venue stays public. What Mirage removes is the link between that position and you.",
+                  },
+                ].map((r) => (
+                  <div key={r.n} className="rounded-xl border border-border bg-card p-5">
+                    <div className="mb-2 flex items-baseline gap-3">
+                      <span className="font-mono text-xs text-muted-foreground">{r.n}</span>
+                      <h3 className="font-serif text-lg font-medium text-foreground">{r.title}</h3>
+                    </div>
+                    <p className="text-xs leading-relaxed">{r.body}</p>
+                    <p className="mt-3 border-l-2 border-warm/40 pl-3 text-xs leading-relaxed">
+                      <span className="font-medium text-warm">Blocked on — </span>
+                      {r.blocker}
+                    </p>
+                  </div>
+                ))}
               </div>
             </Section>
 
