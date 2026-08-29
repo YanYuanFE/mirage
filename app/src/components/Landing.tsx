@@ -240,21 +240,26 @@ export default function Landing({
         <p className="mb-5 text-center text-xs uppercase tracking-widest text-muted-foreground">
           Exit to any of 35+ chains
         </p>
-        <div className="marquee-mask overflow-hidden">
-          <div className="marquee-track gap-2">
-            {[0, 1].map((pass) =>
-              CHAINS.map(([code, name]) => (
-                <span
-                  key={`${pass}-${code}`}
-                  aria-hidden={pass === 1}
-                  className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground"
-                >
-                  <ChainIcon chain={code} />
-                  {name}
-                </span>
-              )),
-            )}
-          </div>
+        <div className="marquee-mask flex flex-col gap-3 overflow-hidden">
+          {[CHAINS.slice(0, 12), CHAINS.slice(12)].map((row, rowIndex) => (
+            <div
+              key={rowIndex}
+              className={"marquee-track gap-3" + (rowIndex ? " reverse" : "")}
+            >
+              {[0, 1].map((pass) =>
+                row.map(([code, name]) => (
+                  <span
+                    key={`${pass}-${code}`}
+                    aria-hidden={pass === 1}
+                    className="flex shrink-0 items-center gap-2.5 rounded-full border border-border bg-card px-5 py-2.5 text-base text-muted-foreground"
+                  >
+                    <ChainIcon chain={code} size={6} />
+                    {name}
+                  </span>
+                )),
+              )}
+            </div>
+          ))}
         </div>
       </section>
 

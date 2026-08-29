@@ -38,12 +38,21 @@ const LLAMAO: Record<string, string> = {
   zec: "zcash",
 };
 
-export function ChainIcon({ chain }: { chain: string }) {
+// Tailwind needs whole class names, so sizes are looked up rather than built.
+const SIZE = {
+  4: ["size-4", "text-[9px]"],
+  6: ["size-6", "text-[11px]"],
+} as const;
+
+export function ChainIcon({ chain, size = 4 }: { chain: string; size?: keyof typeof SIZE }) {
   const [failed, setFailed] = useState(false);
+  const [box, label] = SIZE[size];
   const name = LLAMAO[chain];
   if (!name || failed)
     return (
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-semibold uppercase text-muted-foreground">
+      <span
+        className={`flex ${box} ${label} shrink-0 items-center justify-center rounded-full bg-muted font-semibold uppercase text-muted-foreground`}
+      >
         {chain[0]}
       </span>
     );
@@ -51,7 +60,7 @@ export function ChainIcon({ chain }: { chain: string }) {
     <img
       src={`https://icons.llamao.fi/icons/chains/rsz_${encodeURIComponent(name)}.jpg`}
       alt=""
-      className="size-4 shrink-0 rounded-full"
+      className={`${box} shrink-0 rounded-full`}
       onError={() => setFailed(true)}
     />
   );

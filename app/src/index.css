@@ -215,8 +215,16 @@
 .marquee-mask:hover .marquee-track {
     animation-play-state: paused;
 }
+/* second row runs the other way, so the two never move as one block */
+.marquee-track.reverse {
+    animation-name: marquee-reverse;
+}
 @keyframes marquee {
     to { transform: translateX(-50%); }
+}
+@keyframes marquee-reverse {
+    from { transform: translateX(-50%); }
+    to { transform: translateX(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
