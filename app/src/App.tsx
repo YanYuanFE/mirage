@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import Landing from "@/components/Landing";
 import WalletApp from "@/components/WalletApp";
+import Docs from "@/components/Docs";
 import { useTheme } from "@/lib/theme";
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/app" element={<WalletApp theme={theme} onToggleTheme={toggleTheme} />} />
+        <Route path="/docs" element={<Docs theme={theme} onToggleTheme={toggleTheme} />} />
       </Routes>
     </div>
   );

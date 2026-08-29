@@ -66,6 +66,12 @@ export default function Landing({
           <span className="font-serif text-xl font-medium tracking-tight">Mirage</span>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
+          <button
+            onClick={() => navigate("/docs")}
+            className="hidden text-sm text-muted-foreground transition hover:text-foreground sm:block"
+          >
+            Docs
+          </button>
           <a
             href="https://github.com/YanYuanFE/mirage"
             target="_blank"
@@ -120,15 +126,9 @@ export default function Landing({
           <Button size="lg" onClick={onLaunch} className="gap-2">
             Launch app <ArrowRight className="size-4" />
           </Button>
-          <a
-            href="https://github.com/YanYuanFE/mirage/blob/main/docs/ARCHITECTURE.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Button size="lg" variant="outline">
-              Read the architecture
-            </Button>
-          </a>
+          <Button size="lg" variant="outline" onClick={() => navigate("/docs")}>
+            Read the architecture
+          </Button>
         </div>
 
         {/* Stat strip */}
