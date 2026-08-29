@@ -18,6 +18,28 @@ Public chains leak everything: balances, counterparties, strategy, and the links
 
 Mirage's goal: **make "hard to link" the default property of moving value anywhere**, behind a UX no more complex than a normal wallet send.
 
+### 2a. Prior art: ZODL
+
+The closest shipped product is [ZODL](https://intents.near.org/case-studies/zodl),
+a Zcash wallet that reaches 31 chains and 100+ assets over the same NEAR Intents
+rail Mirage uses, and has earned $3M+ in fees doing it. That is worth stating
+plainly: **the pattern is market-validated, not speculative** — a privacy asset
+plus intent-based settlement is something people already pay for.
+
+Three things make Mirage a different product rather than ZODL-for-Starknet:
+
+| | ZODL | Mirage |
+|---|---|---|
+| What carries the privacy | the asset — you must hold ZEC | the pool — shield USDC, ETH, or any ERC-20 and stay in it |
+| Custody | its own wallet, holding your keys | no keys; the user's existing wallet signs and proves |
+| Per-transfer strategy | one signature, one swap | plan of randomized chunks with timing jitter (§5.4) |
+
+The asset distinction is the substantive one. On ZODL, privacy costs you a
+currency conversion — you are private only while denominated in ZEC. In a
+shielded pool the token you deposited is the token you hold, so a treasury can
+be private in USDC. Mirage converts to STRK only at the exit, and only because
+1Click accepts nothing else out of Starknet (§3).
+
 ## 3. Building blocks (all verified live)
 
 | Primitive | Provider | Status |
@@ -200,5 +222,5 @@ Key rotation, reproducible builds, and attestation policy hardening remain post-
 |---|---|---|
 | STRK20 integration depth | 30 % | pool (shield/unshield/private transfer) + Wallet API + AVNU anonymizer swap + (stretch) custom adapter |
 | Working mainnet product | 30 % | live mainnet flow from day 3; no testnet exists for 1Click, so everything is real |
-| Innovation | 25 % | first STRK20 → NEAR Intents privacy gateway; organizer-endorsed direction, unbuilt on the leaderboard |
+| Innovation | 25 % | first STRK20 → NEAR Intents privacy gateway; the only sprint project on that rail, and the rail itself is proven — ZODL earns $3M+ in fees on it for Zcash (§2a), so this is an unserved market rather than an untested idea |
 | Docs & open-source quality | 15 % | this document, MIT license, reproducible scripts |
