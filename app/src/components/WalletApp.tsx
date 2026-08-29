@@ -299,6 +299,16 @@ export default function WalletApp({
     };
   }, [wallets, wa]);
 
+  async function shieldedBalanceOf(token: string): Promise<bigint> {
+    const r: any = await wa?.strk20Balances([]);
+    const arr = Array.isArray(r) ? r : (r?.value ?? []);
+    const entry = arr.find(
+      (b: any) =>
+        num.toBigInt(b?.token ?? b?.token_address ?? b?.[0] ?? 0) === num.toBigInt(token),
+    );
+    return entry ? num.toBigInt(entry.amount ?? entry.balance ?? entry[1]) : 0n;
+  }
+
   async function refreshBalances() {
     if (!address) return;
     const token = shieldToken.address;
@@ -313,14 +323,7 @@ export default function WalletApp({
       setPublicBal(null);
     }
     try {
-      const r: any = await wa?.strk20Balances([]);
-      const arr = Array.isArray(r) ? r : (r?.value ?? []);
-      const entry = arr.find(
-        (b: any) =>
-          num.toBigInt(b?.token ?? b?.token_address ?? b?.[0] ?? 0) ===
-          num.toBigInt(token),
-      );
-      setShieldedBal(entry ? num.toBigInt(entry.amount ?? entry.balance ?? entry[1]) : 0n);
+      setShieldedBal(await shieldedBalanceOf(token));
     } catch {
       setShieldedBal(null);
     }
@@ -415,16 +418,10 @@ export default function WalletApp({
   // In-pool private swap of a shielded non-STRK balance to STRK via the AVNU
   // anonymizer (withdraw to executor → open note → invoke). One atomic tx the
   // wallet proves itself. Needed before exiting: 1Click only takes STRK.
-  async function handleConvert() {
-    if (!wa || shieldToken.symbol === "STRK") return;
-    const from = shieldToken;
-    let sellAmount: bigint;
-    try {
-      sellAmount = parseUnits(amount, from.decimals);
-    } catch {
-      toast.error("Enter a valid amount");
-      return;
-    }
+  // Returns the STRK actually credited — measured from the balance, not the
+  // quote, because slippage means the quote is only an estimate.
+  async function convertToStrk(from: PoolToken, sellAmount: bigint): Promise<bigint | null> {
+    const before = await shieldedBalanceOf(STRK);
     setBusy(true);
     const id = toast.loading("Quoting in-pool swap…");
     let actions: WALLET_API.STRK20_ACTION[];
@@ -458,10 +455,27 @@ export default function WalletApp({
     } catch (e: any) {
       toast.error(e?.message ?? String(e), { id });
       setBusy(false);
-      return;
+      return null;
     }
     setBusy(false);
-    await submit(actions, `Convert ${amount} ${from.symbol} → STRK`);
+    const tx = await submit(
+      actions,
+      `Convert ${fmtUnits(sellAmount, from.decimals)} ${from.symbol} → STRK`,
+    );
+    if (!tx) return null;
+    const gained = (await shieldedBalanceOf(STRK)) - before;
+    if (gained <= 0n) {
+      toast.error("Convert settled but no STRK was credited");
+      return null;
+    }
+    return gained;
+  }
+
+  async function handleConvert() {
+    if (!wa || shieldToken.symbol === "STRK") return;
+    const v = parsedAmount(shieldToken.decimals);
+    if (v === null) return;
+    await convertToStrk(shieldToken, v);
   }
 
   async function withdrawTo(
@@ -528,8 +542,18 @@ export default function WalletApp({
 
   async function handleAnywhere() {
     if (!wa || !destAsset || !recipient) return;
-    const total = parsedAmount(18); // exits are always STRK
-    if (total === null) return;
+    // The amount is denominated in whatever shielded token is selected. 1Click
+    // only takes STRK out of Starknet, so anything else converts in-pool first
+    // and the exit runs on the STRK that conversion actually credited.
+    const entered = parsedAmount(shieldToken.decimals);
+    if (entered === null) return;
+    let total = entered;
+    if (shieldToken.symbol !== "STRK") {
+      const gained = await convertToStrk(shieldToken, entered);
+      if (gained === null) return;
+      total = gained;
+      toast.success(`Converted to ${fmtStrk(gained)} STRK — continuing the exit`);
+    }
 
     if (chunkCount > 1) {
       if (runningRef.current) return;
@@ -656,7 +680,7 @@ export default function WalletApp({
     running ||
     !onMainnet ||
     // a pasted token that hasn't resolved has no decimals — nothing to spend
-    (isCustom && !customToken && (tab === "shield" || tab === "send")) ||
+    (isCustom && !customToken) ||
     (tab === "send" && !recipient) ||
     (tab === "swap" && swapDir === "out" && (!recipient || !destAsset));
 
@@ -763,9 +787,9 @@ export default function WalletApp({
             </div>
           )}
 
-          {(tab === "shield" || tab === "send") && (
+          {(tab === "shield" || tab === "send" || (tab === "swap" && swapDir === "out")) && (
             <div className="flex flex-col gap-1.5">
-              <Label>Token</Label>
+              <Label>{tab === "swap" ? "Spend (shielded)" : "Token"}</Label>
               <Select
                 value={shieldSym}
                 onValueChange={(v) => setShieldSym(v ?? "STRK")}
@@ -806,7 +830,7 @@ export default function WalletApp({
           {!(tab === "swap" && swapDir === "in") && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="amount">
-                Amount ({tab === "swap" ? "STRK" : shieldToken.symbol})
+                Amount ({shieldToken.symbol})
               </Label>
               <Input
                 id="amount"
@@ -815,6 +839,12 @@ export default function WalletApp({
                 className="font-mono"
                 onChange={(e) => setAmount(e.target.value)}
               />
+              {tab === "swap" && swapDir === "out" && shieldToken.symbol !== "STRK" && (
+                <span className="text-xs text-muted-foreground">
+                  1Click only takes STRK out of Starknet — this converts in-pool
+                  first, then exits.
+                </span>
+              )}
             </div>
           )}
 
