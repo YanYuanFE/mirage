@@ -112,7 +112,7 @@ export default function WalletApp({
   const [copied, setCopied] = useState(false);
 
   const [publicBal, setPublicBal] = useState<bigint | null>(null);
-  const [shieldedBal, setShieldedBal] = useState<bigint | null>(null);
+  const [shieldedMap, setShieldedMap] = useState<Record<string, bigint> | null>(null);
 
   const [tab, setTab] = useState<Tab>("shield");
   const [swapDir, setSwapDir] = useState<SwapDir>("out");
@@ -299,22 +299,29 @@ export default function WalletApp({
     };
   }, [wallets, wa]);
 
-  async function shieldedBalanceOf(token: string): Promise<bigint> {
+  // strk20Balances asks the user to disclose private balances, and one call
+  // with an empty list already returns every token — so fetch the whole map
+  // once and switch tokens against the cache instead of re-prompting.
+  async function refreshShielded(): Promise<Record<string, bigint>> {
     const r: any = await wa?.strk20Balances([]);
     const arr = Array.isArray(r) ? r : (r?.value ?? []);
-    const entry = arr.find(
-      (b: any) =>
-        num.toBigInt(b?.token ?? b?.token_address ?? b?.[0] ?? 0) === num.toBigInt(token),
-    );
-    return entry ? num.toBigInt(entry.amount ?? entry.balance ?? entry[1]) : 0n;
+    const map: Record<string, bigint> = {};
+    for (const b of arr) {
+      const token = num.toHex(num.toBigInt(b?.token ?? b?.token_address ?? b?.[0] ?? 0));
+      map[token] = num.toBigInt(b?.balance ?? b?.amount ?? b?.[1] ?? 0);
+    }
+    setShieldedMap(map);
+    return map;
   }
 
-  async function refreshBalances() {
+  const shieldedOf = (map: Record<string, bigint> | null, token: string) =>
+    map?.[num.toHex(num.toBigInt(token))] ?? 0n;
+
+  async function refreshPublic() {
     if (!address) return;
-    const token = shieldToken.address;
     try {
       const res = await provider.callContract({
-        contractAddress: token,
+        contractAddress: shieldToken.address,
         entrypoint: "balanceOf",
         calldata: [address],
       });
@@ -322,17 +329,29 @@ export default function WalletApp({
     } catch {
       setPublicBal(null);
     }
+  }
+
+  async function refreshBalances() {
+    await refreshPublic();
     try {
-      setShieldedBal(await shieldedBalanceOf(token));
+      await refreshShielded();
     } catch {
-      setShieldedBal(null);
+      setShieldedMap(null);
     }
   }
 
+  // Public balance is a plain contract read — safe to redo on every switch.
   useEffect(() => {
-    refreshBalances();
+    refreshPublic();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, wa, shieldToken.address]);
+  }, [address, shieldToken.address]);
+
+  // Private balances cost a wallet prompt, so only on connect.
+  useEffect(() => {
+    if (!wa) return;
+    refreshShielded().catch(() => setShieldedMap(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wa]);
 
   async function submit(actions: WALLET_API.STRK20_ACTION[], title: string) {
     if (!wa) return undefined;
@@ -421,7 +440,7 @@ export default function WalletApp({
   // Returns the STRK actually credited — measured from the balance, not the
   // quote, because slippage means the quote is only an estimate.
   async function convertToStrk(from: PoolToken, sellAmount: bigint): Promise<bigint | null> {
-    const before = await shieldedBalanceOf(STRK);
+    const before = shieldedOf(shieldedMap, STRK);
     setBusy(true);
     const id = toast.loading("Quoting in-pool swap…");
     let actions: WALLET_API.STRK20_ACTION[];
@@ -463,7 +482,7 @@ export default function WalletApp({
       `Convert ${fmtUnits(sellAmount, from.decimals)} ${from.symbol} → STRK`,
     );
     if (!tx) return null;
-    const gained = (await shieldedBalanceOf(STRK)) - before;
+    const gained = shieldedOf(await refreshShielded(), STRK) - before;
     if (gained <= 0n) {
       toast.error("Convert settled but no STRK was credited");
       return null;
@@ -741,7 +760,7 @@ export default function WalletApp({
               <ShieldCheck className="size-3.5" /> Shielded
             </span>
             <span className="font-mono text-lg font-semibold">
-              {shieldedBal !== null ? fmtUnits(shieldedBal, shieldToken.decimals) : "–"}{" "}
+              {shieldedMap ? fmtUnits(shieldedOf(shieldedMap, shieldToken.address), shieldToken.decimals) : "–"}{" "}
               <span className="text-sm text-muted-foreground">{shieldToken.symbol}</span>
             </span>
           </CardContent>
