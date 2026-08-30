@@ -82,6 +82,18 @@ type SwapDir = "out" | "in";
 
 const LAST_WALLET_KEY = "mirage.wallet";
 
+// A swap spans two chains and several minutes; a toast shows one moment of it.
+// This is the whole run, kept on screen until the next one starts.
+type SwapRun = {
+  label: string;
+  destChain: string;
+  stage: "quoting" | "wallet" | "settling" | "done" | "stalled" | "failed";
+  srcTxHash?: string;
+  destTxHash?: string;
+  amountOut?: string;
+  note?: string;
+};
+
 // The Wallet API is a single request: we never learn that the user pressed
 // confirm, only that a hash came back. Spending a note is proved after that
 // press, which takes a while — so stop asking for a confirmation that has
@@ -158,6 +170,7 @@ export default function WalletApp({
   const [srcRefund, setSrcRefund] = useState("");
   const [retQuote, setRetQuote] = useState<Quote | null>(null);
   const [retPhase, setRetPhase] = useState("");
+  const [run, setRun] = useState<SwapRun | null>(null);
 
   useEffect(() => {
     const store = createStore({ eip1193Adapters: [] });
@@ -622,6 +635,12 @@ export default function WalletApp({
 
     setBusy(true);
     const id = toast.loading("Requesting route…");
+    const patch = (p: Partial<SwapRun>) => setRun((r) => (r ? { ...r, ...p } : r));
+    setRun({
+      label: `${fmtStrk(total)} STRK → ${destToken?.symbol ?? ""}`,
+      destChain: destToken?.blockchain ?? "",
+      stage: "quoting",
+    });
     let deposit = "";
     try {
       const q = await requestQuote({
@@ -631,6 +650,7 @@ export default function WalletApp({
         refundTo: address,
       });
       deposit = q.depositAddress;
+      patch({ stage: "wallet", amountOut: q.amountOutFormatted });
       toast.loading(
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
         { id },
@@ -641,25 +661,29 @@ export default function WalletApp({
       );
       const txHash = await withdrawTo(total, q.depositAddress, (h) => {
         settled();
+        patch({ srcTxHash: h, stage: "settling" });
         toast.loading("Withdrawal submitted — waiting for the block…", {
           id,
           action: { label: "View", onClick: () => window.open(explorerTx(h), "_blank") },
         });
       }).finally(settled);
+      patch({ srcTxHash: txHash, stage: "settling" });
       toast.loading(`Left the pool — solvers settling on ${destToken?.blockchain}…`, {
         id,
         action: { label: "Starknet tx", onClick: () => window.open(explorerTx(txHash), "_blank") },
       });
-      await reportArrival(q.depositAddress, id);
+      await reportArrival(q.depositAddress, id, patch);
     } catch (e: any) {
       // A wallet timeout is not an outcome, it is the wallet giving up on its
       // own prover — the withdrawal can still land. Telling the user it failed
       // is how they end up sending twice, so ask 1Click what really happened.
       if (deposit && /timeout/i.test(e?.message ?? "")) {
+        patch({ stage: "settling", note: "wallet stopped waiting — checking the address" });
         toast.loading("Wallet stopped waiting — checking whether it landed…", { id });
-        await reportArrival(deposit, id);
+        await reportArrival(deposit, id, patch);
         return;
       }
+      patch({ stage: "failed", note: walletErrorMessage(e) });
       toast.error(walletErrorMessage(e), { id });
     } finally {
       setBusy(false);
@@ -690,12 +714,18 @@ export default function WalletApp({
   }
 
   // A transfer isn't done when it leaves Starknet — it's done when it lands.
-  async function reportArrival(depositAddress: string, id: string | number) {
+  async function reportArrival(
+    depositAddress: string,
+    id: string | number,
+    patch?: (p: Partial<SwapRun>) => void,
+  ) {
     const landed = await pollDeposit(depositAddress);
     if (!landed) {
+      patch?.({ stage: "stalled", note: "solvers have not settled it yet" });
       toast.warning("Still in flight — solvers have not settled it yet.", { id });
       return;
     }
+    patch?.({ stage: "done", destTxHash: landed.destTxHash, amountOut: landed.amountOut });
     const url = destToken && landed.destTxHash
       ? destExplorerTx(destToken.blockchain, landed.destTxHash)
       : null;
@@ -1230,6 +1260,85 @@ export default function WalletApp({
           )}
         </CardContent>
       </Card>
+
+      {/* Swap run — both legs of the transfer, kept on screen */}
+      {tab === "swap" && swapDir === "out" && run && (
+        <Card>
+          <CardContent className="flex flex-col gap-3 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{run.label}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRun(null)}
+                disabled={busy}
+              >
+                Dismiss
+              </Button>
+            </div>
+
+            {[
+              {
+                title: "Leaving the pool",
+                sub: "Starknet withdrawal",
+                hash: run.srcTxHash,
+                href: run.srcTxHash ? explorerTx(run.srcTxHash) : null,
+                done: Boolean(run.srcTxHash),
+                pendingLabel:
+                  run.stage === "quoting" ? "requesting route…" : "proving in your wallet…",
+              },
+              {
+                title: `Arriving on ${run.destChain}`,
+                sub: run.amountOut ? `${run.amountOut} ${destToken?.symbol ?? ""}` : "settling",
+                hash: run.destTxHash,
+                href:
+                  run.destTxHash && destExplorerTx(run.destChain, run.destTxHash),
+                done: run.stage === "done",
+                pendingLabel: run.srcTxHash ? "solvers settling…" : "waiting for the withdrawal",
+              },
+            ].map((leg) => (
+              <div key={leg.title} className="flex items-center gap-3">
+                <span className="grid size-6 shrink-0 place-items-center">
+                  {leg.done ? (
+                    <Check className="size-4 text-primary" />
+                  ) : run.stage === "failed" || run.stage === "stalled" ? (
+                    <span className="size-2 rounded-full bg-warm" />
+                  ) : (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  )}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm">{leg.title}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {leg.done ? leg.sub : leg.pendingLabel}
+                  </span>
+                </div>
+                {leg.hash &&
+                  (leg.href ? (
+                    <a
+                      href={leg.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 font-mono text-xs text-primary"
+                    >
+                      {shortHex(leg.hash)} ↗
+                    </a>
+                  ) : (
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {shortHex(leg.hash)}
+                    </span>
+                  ))}
+              </div>
+            ))}
+
+            {run.note && (
+              <span className="border-l-2 border-warm/40 pl-3 text-xs text-muted-foreground">
+                {run.note}
+              </span>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Plan panel */}
       {tab === "swap" && swapDir === "out" && plan && (
