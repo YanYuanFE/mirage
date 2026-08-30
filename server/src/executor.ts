@@ -32,14 +32,21 @@ export async function runPlan(plan: Plan): Promise<void> {
         continue;
       }
 
-      // Crashed mid-withdrawal — only safe to retry if nothing has arrived.
-      if (c.status === "withdrawing" && c.depositAddress) {
+      // A chunk with a deposit address may have broadcast a withdrawal whose
+      // hash we never persisted. PENDING_DEPOSIT only says nothing has arrived
+      // *yet*, not that nothing was sent — retrying on that guess spends the
+      // same notes twice. Stop and require a human to check the address.
+      if (c.status !== "scheduled" && c.depositAddress) {
         const s = await getStatus(c.depositAddress).catch(() => null);
         if (s && s.status !== "PENDING_DEPOSIT") {
           if (!(await settle(c.depositAddress, i, update))) return;
           continue;
         }
+        update(i, { status: "needs_check" });
+        return;
       }
+
+      if (c.status === "needs_check") return;
 
       if (c.status === "scheduled" && c.delayMs > 0) await sleep(c.delayMs);
 

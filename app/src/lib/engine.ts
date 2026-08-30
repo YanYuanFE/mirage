@@ -11,6 +11,7 @@ export type ChunkStatus =
   | "awaiting_wallet"
   | "bridging"
   | "success"
+  | "needs_check"
   | "failed";
 
 export type Chunk = {
@@ -160,15 +161,23 @@ export async function executePlan(
       continue;
     }
 
-    // Interrupted while the wallet dialog was open: we never saw a hash, so ask
-    // 1Click whether the funds arrived before risking a second withdrawal.
-    if (c.status === "awaiting_wallet" && c.depositAddress) {
+    // A chunk that already has a deposit address may have broadcast a
+    // withdrawal we never saw the hash for. PENDING_DEPOSIT only says nothing
+    // has arrived *yet* — it is not proof nothing was sent, and a Starknet tx
+    // can stay pending. Retrying on that guess is how the same notes get spent
+    // twice, so stop and make a human check the address.
+    if (c.status !== "scheduled" && c.depositAddress) {
       const s = await getStatus(pad(c.depositAddress)).catch(() => null);
       if (s && s.status !== "PENDING_DEPOSIT") {
         if (!(await settle(c.depositAddress, i))) return plan;
         continue;
       }
+      update({ status: "needs_check" }, i);
+      return plan;
     }
+
+    // Cleared by the user only, after they confirmed nothing arrived.
+    if (c.status === "needs_check") return plan;
 
     if (c.status === "scheduled" && c.delayMs > 0) await sleep(c.delayMs);
 

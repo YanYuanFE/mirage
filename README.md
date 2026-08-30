@@ -11,19 +11,19 @@ Any ERC-20 (USDC / ETH / STRK ...)
    │  shield into STRK20 pool
    ▼
 Private in-pool swap → STRK          (AVNU anonymizer)
-   │  unshield to a fresh account
+   │  withdraw straight to the one-time address
    ▼
 NEAR Intents 1Click deposit          (one-time deposit address)
    │  solvers execute cross-chain
    ▼
-186 assets on 35 chains, delivered to a fresh address
+186 assets on 35 chains, delivered to an address of your choosing
 ```
 
 Three primitives, one flow:
 
 1. **STRK20 shielded pool** — breaks the link between your main wallet and outgoing funds.
 2. **NEAR Intents (1Click API)** — intent-based cross-chain execution; every transfer uses a one-time deposit address, no fixed bridge path.
-3. **Workflow engine** — splits amounts and randomizes timing so value can't be re-linked by correlation; runs in a TEE (Phala Cloud) with remote attestation.
+3. **Workflow engine** — splits amounts and randomizes timing so value can't be re-linked by correlation. Containerized for a TEE deployment ([roadmap](docs/ARCHITECTURE.md#9a-roadmap)); today it runs in your browser.
 
 Bidirectional: the same rail runs in reverse (**Return**), so you can fund a fresh, unlinkable identity on another chain — Hyperliquid, Polymarket — trade there, and bring the proceeds back into your shielded balance. Mirage hides the *link* to you, not the on-venue activity: your positions are visible on the venue, just not provably yours.
 

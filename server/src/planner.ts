@@ -8,6 +8,7 @@ export type ChunkStatus =
   | "withdrawing"
   | "bridging"
   | "success"
+  | "needs_check"
   | "failed";
 
 export type Chunk = {

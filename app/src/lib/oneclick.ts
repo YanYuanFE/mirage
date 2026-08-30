@@ -1,13 +1,14 @@
-// NEAR Intents 1Click API client. Calls go through the vite dev proxy (/1click)
-// to avoid CORS; in production the workflow engine owns these calls server-side.
+// NEAR Intents 1Click API client. Calls go through a proxy (/1click) — the vite
+// dev server locally, a rewrite on Vercel — so there is no CORS problem and no
+// key in the browser.
+//
+// There is deliberately no JWT here: every VITE_* value is inlined into the
+// public bundle, so a fee-waiver token configured that way would be readable by
+// any visitor. Authorization belongs in the proxy, which is server-side.
 
 const BASE = "/1click";
-const JWT = import.meta.env.VITE_ONECLICK_JWT as string | undefined;
 
-const headers: Record<string, string> = {
-  "Content-Type": "application/json",
-  ...(JWT ? { Authorization: `Bearer ${JWT}` } : {}),
-};
+const headers: Record<string, string> = { "Content-Type": "application/json" };
 
 export type OneClickToken = {
   assetId: string;

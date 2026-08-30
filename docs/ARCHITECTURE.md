@@ -167,9 +167,14 @@ Two phases:
 
 **Resume safety.** A chunk that already has a withdrawal transaction is never
 withdrawn again: on resume the executor re-attaches to that chunk's existing
-deposit address and polls it to settlement. A chunk interrupted while the wallet
-dialog was open is probed first, and only re-withdrawn if 1Click confirms
-nothing arrived.
+deposit address and polls it to settlement.
+
+A chunk that has a deposit address but no recorded hash is the dangerous case,
+and it is deliberately **not** retried. `PENDING_DEPOSIT` only means nothing has
+arrived *yet* — a broadcast withdrawal can still be pending — so treating it as
+"never sent" is how the same notes get spent twice. Such a chunk is parked as
+`needs_check` and the plan stops; only a human who has looked at the deposit
+address can clear it.
 
 ## 6. Privacy model & honest limitations
 

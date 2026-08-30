@@ -84,7 +84,10 @@ const server = createServer(async (req, res) => {
   json(res, 404, { error: "not found" });
 });
 
-server.listen(cfg.port, () => {
+// Without a token there is nothing protecting recipients, amounts and deposit
+// addresses, so an untokened engine only listens locally.
+const host = cfg.apiToken ? "0.0.0.0" : "127.0.0.1";
+server.listen(cfg.port, host, () => {
   const s = engineStatus();
   console.log(
     `mirage-engine on :${cfg.port} | dryRun=${s.dryRun} | provingConfigured=${s.provingConfigured}`,

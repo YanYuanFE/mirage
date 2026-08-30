@@ -183,6 +183,9 @@ export default function WalletApp({
 
   const onMainnet = chainId === SN_MAIN;
   const isCustom = shieldSym === CUSTOM_TOKEN;
+  // A pasted token can report any symbol it likes, including "STRK" — identity
+  // for the exit rule has to be the contract address.
+  const isStrk = (t: PoolToken) => num.toBigInt(t.address) === num.toBigInt(STRK);
   const shieldToken = useMemo(
     () => (isCustom ? customToken : tokenBySymbol(shieldSym)) ?? POOL_TOKENS[0],
     [isCustom, customToken, shieldSym],
@@ -457,7 +460,16 @@ export default function WalletApp({
   // Returns the STRK actually credited — measured from the balance, not the
   // quote, because slippage means the quote is only an estimate.
   async function convertToStrk(from: PoolToken, sellAmount: bigint): Promise<bigint | null> {
-    const before = shieldedOf(shieldedMap, STRK);
+    // Must be a fresh read: the exit amount is this balance's delta, so a stale
+    // or missing cache would count pre-existing STRK as conversion proceeds and
+    // send it cross-chain. No reading, no moving.
+    let before: bigint;
+    try {
+      before = shieldedOf(await refreshShielded(), STRK);
+    } catch {
+      toast.error("Could not read your shielded balance — not converting");
+      return null;
+    }
     setBusy(true);
     const id = toast.loading("Quoting in-pool swap…");
     let actions: WALLET_API.STRK20_ACTION[];
@@ -508,7 +520,7 @@ export default function WalletApp({
   }
 
   async function handleConvert() {
-    if (!wa || shieldToken.symbol === "STRK") return;
+    if (!wa || isStrk(shieldToken)) return;
     const v = parsedAmount(shieldToken.decimals);
     if (v === null) return;
     await convertToStrk(shieldToken, v);
@@ -584,7 +596,7 @@ export default function WalletApp({
     const entered = parsedAmount(shieldToken.decimals);
     if (entered === null) return;
     let total = entered;
-    if (shieldToken.symbol !== "STRK") {
+    if (!isStrk(shieldToken)) {
       const gained = await convertToStrk(shieldToken, entered);
       if (gained === null) return;
       total = gained;
@@ -700,6 +712,23 @@ export default function WalletApp({
   async function resumePlan() {
     if (!plan || !wa) return;
     await runPlan(plan);
+  }
+
+  // Only the user can clear a needs_check chunk: they have to look at the
+  // deposit address and confirm nothing was ever sent to it.
+  function clearNeedsCheck() {
+    if (!plan) return;
+    const next = {
+      ...plan,
+      chunks: plan.chunks.map((c) =>
+        c.status === "needs_check"
+          ? { ...c, status: "scheduled" as const, depositAddress: undefined, error: undefined }
+          : c,
+      ),
+    };
+    savePlan(next);
+    setPlan(next);
+    toast.info("Marked as never sent — resume to retry that chunk");
   }
 
   // Return leg: swap a destination-chain asset back to STRK on the user's
@@ -934,7 +963,7 @@ export default function WalletApp({
                 className="font-mono"
                 onChange={(e) => setAmount(e.target.value)}
               />
-              {tab === "swap" && swapDir === "out" && shieldToken.symbol !== "STRK" && (
+              {tab === "swap" && swapDir === "out" && !isStrk(shieldToken) && (
                 <span className="text-xs text-muted-foreground">
                   1Click only takes STRK out of Starknet — this converts in-pool
                   first, then exits.
@@ -1182,7 +1211,7 @@ export default function WalletApp({
             </Button>
           )}
 
-          {address && tab === "shield" && shieldToken.symbol !== "STRK" && (
+          {address && tab === "shield" && !isStrk(shieldToken) && (
             <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">
               <span className="text-xs text-muted-foreground">
                 Exiting needs STRK. Convert your shielded {shieldToken.symbol} to
@@ -1212,7 +1241,14 @@ export default function WalletApp({
               </span>
               {!running && (
                 <div className="flex gap-1.5">
-                  {plan.chunks.some((c) => c.status !== "success") && (
+                  {plan.chunks.some((c) => c.status === "needs_check") && (
+                    <Button variant="ghost" size="sm" onClick={clearNeedsCheck}>
+                      Nothing was sent
+                    </Button>
+                  )}
+                  {plan.chunks.some(
+                    (c) => c.status !== "success" && c.status !== "needs_check",
+                  ) && (
                     <Button variant="ghost" size="sm" onClick={once(resumePlan)}>
                       Resume
                     </Button>
@@ -1239,6 +1275,8 @@ export default function WalletApp({
                       "size-2 rounded-full " +
                       (c.status === "success"
                         ? "bg-emerald-400"
+                        : c.status === "needs_check"
+                          ? "bg-warm"
                         : c.status === "failed"
                           ? "bg-destructive"
                           : c.status === "scheduled"
@@ -1255,6 +1293,7 @@ export default function WalletApp({
                     {c.status === "awaiting_wallet" && "confirm in wallet…"}
                     {c.status === "bridging" && "bridging…"}
                     {c.status === "success" && `✓ ${c.amountOutFormatted ?? ""}`}
+                    {c.status === "needs_check" && "⚠ may have already been sent"}
                     {c.status === "failed" && `✕ ${c.error ?? "failed"}`}
                   </span>
                   {c.txHash && (

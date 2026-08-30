@@ -58,3 +58,43 @@ assert.equal(
 );
 assert.equal(plan.chunks[1].destTxHash, "0xdest");
 console.log("ok — resume settled 1 in-flight chunk with 0 new withdrawals");
+
+// A chunk that reached the wallet but never recorded a hash may still have
+// broadcast. PENDING_DEPOSIT is not proof it didn't, so resume must stop
+// rather than guess — this is the case that would double-spend.
+mock.restoreAll();
+mock.module("./src/strk20.ts", {
+  namedExports: {
+    withdrawTo: async () => {
+      withdrawals += 1;
+      return "0xdeadbeef";
+    },
+    engineStatus: () => ({}),
+  },
+});
+mock.module("./src/oneclick.ts", {
+  namedExports: {
+    requestQuote: async () => {
+      throw new Error("resume must not re-quote a chunk that may have broadcast");
+    },
+    getStatus: async () => ({ status: "PENDING_DEPOSIT" }),
+  },
+});
+const { runPlan: runPlan2 } = await import("./src/executor.ts?v=2");
+
+withdrawals = 0;
+const risky = {
+  ...plan,
+  id: "22222222-2222-2222-2222-222222222222",
+  chunks: [
+    { amountWei: "60", delayMs: 0, status: "withdrawing", depositAddress: "0xC" },
+  ],
+};
+await runPlan2(risky);
+assert.equal(withdrawals, 0, "resume withdrew again for a chunk that may have broadcast");
+assert.equal(
+  risky.chunks[0].status,
+  "needs_check",
+  "a possibly-broadcast chunk must stop for human review, not retry",
+);
+console.log("ok — possibly-broadcast chunk parked for review, 0 new withdrawals");
