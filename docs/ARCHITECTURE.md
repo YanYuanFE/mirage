@@ -9,7 +9,8 @@ Mirage is a shielded omnichain wallet layer. A user shields tokens into the STRK
 Mirage is **not** a key-managing wallet. Users keep their existing Starknet wallet (ArgentX / Braavos). Mirage manages three things on top:
 
 1. the user's shielded balance in the STRK20 pool (encrypted notes),
-2. one-time execution accounts used to exit the pool,
+2. the exit itself — quoting, withdrawing, and following the transfer to the
+   destination chain,
 3. execution strategy (splitting, timing, routing) via a workflow engine.
 
 ## 2. Problem
@@ -61,25 +62,21 @@ Key constraint verified against the 1Click token list: **on Starknet, 1Click acc
 └──────────────┘                            └─────────┬─────────┘
                                                       │ 2. private swap → STRK
                                                       │    (AVNU anonymizer)
+                                                      │
+                                                      │ 3. withdraw STRK
                                                       ▼
                                             ┌───────────────────┐
-                                            │ Fresh execution    │  3. private in-pool
-                                            │ account            │◀── transfer + unshield
-                                            └─────────┬─────────┘
-                                                      │ 4. deposit STRK
-                                                      ▼
-                                            ┌───────────────────┐
-                                            │ 1Click one-time    │  5. solvers fill
+                                            │ 1Click one-time    │  4. solvers fill
                                             │ deposit address    │─────────────────▶ destination chain,
-                                            └───────────────────┘                   fresh address
+                                            └───────────────────┘                   address you chose
 ```
 
 Step by step:
 
 1. **Shield** — user connects their existing wallet and shields any ERC-20 into the STRK20 pool. This is the only transaction their main wallet ever signs.
 2. **Convert** — if the shielded asset isn't STRK, swap to STRK inside the pool through the AVNU anonymizer (`privacy_invoke`); result is credited back to private notes.
-3. **Exit** — the pool withdrawal pays the 1Click deposit address directly. The ZK proof is what breaks the link to the depositor, so no intermediate hop is needed for unlinkability. _Not shipped:_ the fresh execution account described below, which would also isolate refunds.
-4. **Quote & deposit** — workflow engine requests a 1Click quote (origin: Starknet STRK; destination: user's chosen asset/chain/address) and sends the unshielded STRK to the returned one-time deposit address.
+3. **Quote** — the workflow engine requests a 1Click quote (origin: Starknet STRK; destination: the chosen asset/chain/address) and gets back a one-time deposit address.
+4. **Exit** — the pool withdrawal pays that deposit address directly. The ZK proof is what breaks the link to the depositor, so no intermediate hop is needed for unlinkability. _Not shipped:_ a fresh execution account, which would additionally isolate refunds (see below).
 5. **Deliver** — NEAR Intents solvers fill the intent on the destination chain (dry-run measured estimate: ~27 s). Engine polls status until settled.
 
 > **Refund leak (known, shipped behaviour).** `refundTo` is currently the user's
@@ -217,7 +214,7 @@ Key rotation, reproducible builds, and attestation policy hardening remain post-
 
 ## 9. Open questions
 
-1. **Can unshield target an arbitrary address?** Docs don't say. Mitigation already in the flow: private transfer to a fresh account first, which unshields to itself. Resolve in the Aug 20–23 slice.
+1. ~~**Can unshield target an arbitrary address?**~~ Resolved on mainnet: it can. Withdrawals pay 1Click's one-time deposit address directly, which is what the shipped exit does.
 2. **Atomic exit adapter** — can a custom anonymizer make "unshield + transfer to deposit address" one transaction? Worth building only after the two-step version works; it is the strongest possible answer to the "integration depth" criterion (30 %).
 3. **1Click JWT turnaround** — apply immediately; fall back to the 0.2 % fee if it doesn't arrive in time.
 
