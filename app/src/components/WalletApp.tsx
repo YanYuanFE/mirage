@@ -55,6 +55,7 @@ import {
   type PoolToken,
 } from "@/lib/tokens";
 import { avnuQuote, avnuBuildPrivate } from "@/lib/avnu";
+import { destExplorerTx } from "@/lib/explorers";
 import type { Theme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -633,26 +634,18 @@ export default function WalletApp({
           action: { label: "View", onClick: () => window.open(explorerTx(h), "_blank") },
         });
       }).finally(settled);
-      toast.success(`Sent — ${q.amountOutFormatted} ${destToken?.symbol} en route`, {
+      toast.loading(`Left the pool — solvers settling on ${destToken?.blockchain}…`, {
         id,
-        action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
+        action: { label: "Starknet tx", onClick: () => window.open(explorerTx(txHash), "_blank") },
       });
+      await reportArrival(q.depositAddress, id);
     } catch (e: any) {
       // A wallet timeout is not an outcome, it is the wallet giving up on its
       // own prover — the withdrawal can still land. Telling the user it failed
       // is how they end up sending twice, so ask 1Click what really happened.
       if (deposit && /timeout/i.test(e?.message ?? "")) {
         toast.loading("Wallet stopped waiting — checking whether it landed…", { id });
-        const landed = await pollDeposit(deposit);
-        if (landed) {
-          toast.success(`Sent — ${landed} ${destToken?.symbol} delivered`, { id });
-          refreshBalances();
-          return;
-        }
-        toast.warning(
-          "Nothing arrived yet. The proof may still be running — check before retrying.",
-          { id },
-        );
+        await reportArrival(deposit, id);
         return;
       }
       toast.error(walletErrorMessage(e), { id });
@@ -661,21 +654,47 @@ export default function WalletApp({
     }
   }
 
-  // Watches a one-time deposit address after a wallet timeout. Returns the
-  // delivered amount once the intent settles, or null if nothing shows up.
-  async function pollDeposit(depositAddress: string): Promise<string | null> {
+  // Watches a one-time deposit address until the intent settles on the far
+  // side. Returns what was delivered and the destination-chain tx, or null.
+  async function pollDeposit(
+    depositAddress: string,
+  ): Promise<{ amountOut: string; destTxHash?: string } | null> {
     const padded = "0x" + depositAddress.replace(/^0x/, "").padStart(64, "0");
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
         const s = await getStatus(padded);
-        if (s.status === "SUCCESS") return s.swapDetails?.amountOutFormatted ?? "funds";
+        if (s.status === "SUCCESS")
+          return {
+            amountOut: s.swapDetails?.amountOutFormatted ?? "funds",
+            destTxHash: s.swapDetails?.destinationChainTxHashes?.[0]?.hash,
+          };
         if (s.status === "REFUNDED" || s.status === "FAILED") return null;
       } catch {
         /* keep polling */
       }
     }
     return null;
+  }
+
+  // A transfer isn't done when it leaves Starknet — it's done when it lands.
+  async function reportArrival(depositAddress: string, id: string | number) {
+    const landed = await pollDeposit(depositAddress);
+    if (!landed) {
+      toast.warning("Still in flight — solvers have not settled it yet.", { id });
+      return;
+    }
+    const url = destToken && landed.destTxHash
+      ? destExplorerTx(destToken.blockchain, landed.destTxHash)
+      : null;
+    toast.success(`Arrived — ${landed.amountOut} ${destToken?.symbol} on ${destToken?.blockchain}`, {
+      id,
+      duration: 15000,
+      action: url
+        ? { label: "View on destination", onClick: () => window.open(url, "_blank") }
+        : undefined,
+    });
+    refreshBalances();
   }
 
   async function resumePlan() {
@@ -1243,9 +1262,24 @@ export default function WalletApp({
                       href={explorerTx(c.txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-primary"
+                      title="Starknet withdrawal"
+                      className="text-muted-foreground transition hover:text-foreground"
                     >
                       <ArrowUpRight className="size-4" />
+                    </a>
+                  )}
+                  {c.destTxHash && (
+                    <a
+                      href={
+                        (destToken && destExplorerTx(destToken.blockchain, c.destTxHash)) ??
+                        undefined
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Arrival on ${destToken?.blockchain ?? "destination"}`}
+                      className="text-primary"
+                    >
+                      <ChainIcon chain={destToken?.blockchain ?? ""} />
                     </a>
                   )}
                 </div>
