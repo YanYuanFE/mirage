@@ -81,6 +81,15 @@ type SwapDir = "out" | "in";
 
 const LAST_WALLET_KEY = "mirage.wallet";
 
+// The Wallet API is a single request: we never learn that the user pressed
+// confirm, only that a hash came back. Spending a note is proved after that
+// press, which takes a while — so stop asking for a confirmation that has
+// almost certainly already happened, and name what the wallet is really doing.
+function whileWalletWorks(id: string | number, proving: string): () => void {
+  const t = setTimeout(() => toast.loading(proving, { id }), 12_000);
+  return () => clearTimeout(t);
+}
+
 // Spending a note needs a proof, and the wallet gets that from its own backend.
 // When that backend 500s the wallet surfaces a bare "UNKNOWN_ERROR", which
 // reads like an app bug — name it for what it is so users retry instead.
@@ -357,6 +366,7 @@ export default function WalletApp({
     if (!wa) return undefined;
     setBusy(true);
     const id = toast.loading("Confirm in your wallet…");
+    const settled = whileWalletWorks(id, "Proving in your wallet — this can take a minute…");
     let txHash: string;
     try {
       const r = await wa.strk20InvokeTransaction(actions);
@@ -365,6 +375,8 @@ export default function WalletApp({
       toast.error(walletErrorMessage(e), { id });
       setBusy(false);
       return undefined;
+    } finally {
+      settled();
     }
     // The relayer can take a while to land the tx; show the hash right away so
     // the wait doesn't look like a stuck dialog.
@@ -604,12 +616,17 @@ export default function WalletApp({
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
         { id },
       );
-      const txHash = await withdrawTo(total, q.depositAddress, (h) =>
+      const settled = whileWalletWorks(
+        id,
+        "Proving the withdrawal in your wallet — this can take a minute…",
+      );
+      const txHash = await withdrawTo(total, q.depositAddress, (h) => {
+        settled();
         toast.loading("Withdrawal submitted — waiting for the block…", {
           id,
           action: { label: "View", onClick: () => window.open(explorerTx(h), "_blank") },
-        }),
-      );
+        });
+      }).finally(settled);
       toast.success(`Sent — ${q.amountOutFormatted} ${destToken?.symbol} en route`, {
         id,
         action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
