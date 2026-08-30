@@ -3,7 +3,7 @@
   "tagline": "Shield once, act anywhere, leave no trace.",
   "description": "Shield any ERC-20 into the STRK20 pool on Starknet, then send value to 35+ chains via NEAR Intents with no on-chain link between your main wallet and the destination.",
   "demo_url": "https://mirage-beta-app.vercel.app",
-  "demo_video": "",
+  "demo_video": "https://youtu.be/SD8mMV744cI",
   "contracts": [],
   "transactions": [
     "0x7f419460965d6d83b2cc919a0f08d11dee212fe367849cfb1afe124ed14b511",
