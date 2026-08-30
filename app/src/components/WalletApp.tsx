@@ -97,6 +97,10 @@ function walletErrorMessage(e: any): string {
   const msg = e?.message ?? String(e);
   const cause = (e?.cause as any)?.message ?? "";
   if (/USER_REFUSED_OP|User (abort|reject)/i.test(msg)) return "Rejected in wallet";
+  // Observed on mainnet: the wallet gives up waiting for its prover, but the
+  // proof still completes and the withdrawal lands. Never call this a failure.
+  if (/timeout/i.test(msg))
+    return "The wallet stopped waiting for its prover — but the transfer may still land. Check before retrying.";
   if (/NOT_REGISTERED/.test(msg))
     return "Account not registered — register once at strk20.starknet.io/app, then retry.";
   if (/Internal server error/i.test(cause) || /UNKNOWN_ERROR/.test(msg))
@@ -605,6 +609,7 @@ export default function WalletApp({
 
     setBusy(true);
     const id = toast.loading("Requesting route…");
+    let deposit = "";
     try {
       const q = await requestQuote({
         amountWei: total,
@@ -612,6 +617,7 @@ export default function WalletApp({
         recipient: recipient.trim(),
         refundTo: address,
       });
+      deposit = q.depositAddress;
       toast.loading(
         `Route: ${q.amountOutFormatted} ${destToken?.symbol} · ~${q.timeEstimate}s. Confirm in wallet…`,
         { id },
@@ -632,10 +638,44 @@ export default function WalletApp({
         action: { label: "View", onClick: () => window.open(explorerTx(txHash), "_blank") },
       });
     } catch (e: any) {
+      // A wallet timeout is not an outcome, it is the wallet giving up on its
+      // own prover — the withdrawal can still land. Telling the user it failed
+      // is how they end up sending twice, so ask 1Click what really happened.
+      if (deposit && /timeout/i.test(e?.message ?? "")) {
+        toast.loading("Wallet stopped waiting — checking whether it landed…", { id });
+        const landed = await pollDeposit(deposit);
+        if (landed) {
+          toast.success(`Sent — ${landed} ${destToken?.symbol} delivered`, { id });
+          refreshBalances();
+          return;
+        }
+        toast.warning(
+          "Nothing arrived yet. The proof may still be running — check before retrying.",
+          { id },
+        );
+        return;
+      }
       toast.error(walletErrorMessage(e), { id });
     } finally {
       setBusy(false);
     }
+  }
+
+  // Watches a one-time deposit address after a wallet timeout. Returns the
+  // delivered amount once the intent settles, or null if nothing shows up.
+  async function pollDeposit(depositAddress: string): Promise<string | null> {
+    const padded = "0x" + depositAddress.replace(/^0x/, "").padStart(64, "0");
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const s = await getStatus(padded);
+        if (s.status === "SUCCESS") return s.swapDetails?.amountOutFormatted ?? "funds";
+        if (s.status === "REFUNDED" || s.status === "FAILED") return null;
+      } catch {
+        /* keep polling */
+      }
+    }
+    return null;
   }
 
   async function resumePlan() {
